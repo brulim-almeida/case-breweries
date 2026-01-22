@@ -15,7 +15,6 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.operators.python import PythonOperator
 from airflow.sensors.filesystem import FileSensor
-from airflow.utils.dates import days_ago
 from airflow.models import Variable
 
 # Add project root to Python path
