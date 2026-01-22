@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+brew_env/
+
+# Airflow
+logs/
+airflow.db
+airflow.cfg
+unittests.cfg
+airflow-webserver.pid
+standalone_admin_password.txt
+
+# Data Lake
+lakehouse/
+*.parquet
+*.delta
+
+# Monitoring
+monitoring/*.log
+monitoring/*.json
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment Variables
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
