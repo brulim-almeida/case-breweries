@@ -377,5 +377,5 @@ Agradeço pela oportunidade e estou disponível para qualquer esclarecimento!
 
 ---
 
-**Autor:** [Bruno Lima](https://github.com/brulim-almeida)  
+**Autor:** [Bruno Lima](https://www.linkedin.com/in/brulimalmeida/)  
 **Repositório:** [case-breweries](https://github.com/brulim-almeida/case-breweries)  
