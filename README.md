@@ -4,7 +4,7 @@ O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, 
 
 <img width="1047" height="502" alt="image" src="https://github.com/user-attachments/assets/254f9aa8-109c-4563-9474-ad4620965980" />
 
-> 💾 Arquitetura do Pipeline de Dados
+> 💾 Arquitetura da Pipeline de Dados
 
 ## Resumo dos Principais Conceitos e Tecnologias Utilizadas
 
@@ -17,10 +17,6 @@ O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, 
 * **Boas práticas de engenharia**: código modular, documentado e testável
 * **Data Quality** integrado com validações e métricas de qualidade em cada camada
 * **XCom** para comunicação entre tasks e rastreamento de metadados
-
-Segue abaixo uma imagem do painel de controle das execuções da DAG:
-
-<img src="/imgs/dag_execution.png" />
 
 ## Estrutura de Diretórios e Arquivos
 
@@ -68,7 +64,9 @@ case-breweries/
 
 ## Descrição da DAG [breweries_pipeline_dag.py]
 
-<img src="/imgs/dag_graph.png" />
+<img width="297" height="313" alt="image" src="https://github.com/user-attachments/assets/0d298aac-51a8-4554-b186-54f322c1f7c0" />
+
+<img width="1151" height="302" alt="image" src="https://github.com/user-attachments/assets/d4eeab73-0879-4a18-bd7c-58cdcd223fa7" />
 
 O pipeline é composto por 4 tasks principais encadeadas:
 
@@ -184,7 +182,6 @@ else:
 - Migrar para **Kubernetes** (EKS, GKE ou AKS)
 - Implementar **Spark Operator** para auto-scaling de Spark executors
 - Utilizar **Airflow on K8s** com KubernetesExecutor
-- Configurar **HPA** (Horizontal Pod Autoscaler) baseado em métricas
 
 **Benefícios:** Alta disponibilidade, elasticidade, melhor utilização de recursos
 
@@ -193,7 +190,6 @@ else:
 - **Terraform** para provisionamento de infra (AWS/GCP/Azure)
 - **GitHub Actions** ou **GitLab CI** para pipelines CI/CD
 - **ArgoCD** para GitOps e deployment automatizado
-- **Pre-commit hooks** para linting (flake8, black, mypy)
 - **Testes automatizados** em múltiplos ambientes (dev, staging, prod)
 
 **Benefícios:** FinOps, reprodutibilidade, rollback rápido, segregação de ambientes
@@ -201,8 +197,6 @@ else:
 ### 3. Segurança e Governança
 - **Secrets Management**: Migrar para AWS Secrets Manager ou HashiCorp Vault
 - **IAM Roles**: Implementar least privilege access
-- **Data Catalog**: Integrar com AWS Glue ou Apache Atlas
-- **Data Lineage**: Implementar OpenLineage para rastreamento
 
 ### 4. Otimizações de Performance
 - **Z-Ordering** no Delta Lake para queries otimizadas
@@ -212,7 +206,6 @@ else:
 
 ### 5. Advanced Analytics
 - **Streaming**: Implementar ingestão em tempo real com Kafka + Spark Streaming
-- **ML Pipeline**: Adicionar camada Platinum para feature engineering
 - **Data Quality**: Integrar Great Expectations com alertas automáticos
 
 ## Passos para Executar o Projeto
@@ -386,4 +379,3 @@ Agradeço pela oportunidade e estou disponível para qualquer esclarecimento!
 
 **Autor:** [Bruno Lima](https://github.com/brulim-almeida)  
 **Repositório:** [case-breweries](https://github.com/brulim-almeida/case-breweries)  
-**Data:** Janeiro 2026
