@@ -2,7 +2,7 @@
 
 O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, processar e armazenar informações de cervejarias a partir da API Open Brewery DB. O pipeline segue a arquitetura Medallion (Bronze, Silver e Gold) implementada com Apache Airflow, PySpark e Delta Lake.
 
-<img src="/imgs/architecture_diagram.png" />
+<img width="1047" height="502" alt="image" src="https://github.com/user-attachments/assets/254f9aa8-109c-4563-9474-ad4620965980" />
 
 > 💾 Arquitetura do Pipeline de Dados
 
