@@ -200,11 +200,16 @@ class BronzeLayer:
         logger.info("=" * 80)
         
         ingestion_timestamp = datetime.now()
+        pages_processed = 0
         
         try:
             # Fetch all breweries from API
             logger.info("Fetching breweries from Open Brewery DB API...")
             breweries = self.api_client.get_all_breweries(max_pages=max_pages)
+            
+            # Calculate pages processed (assuming per_page from settings)
+            if breweries:
+                pages_processed = (len(breweries) + Settings.BREWERY_API_PER_PAGE - 1) // Settings.BREWERY_API_PER_PAGE
             
             if not breweries:
                 logger.warning("No breweries fetched from API")
@@ -240,6 +245,9 @@ class BronzeLayer:
                 file_path=file_path
             )
             
+            # Add pages_processed to metadata
+            metadata['pages_processed'] = pages_processed
+            
             # Save metadata
             if save_metadata:
                 self._save_metadata(metadata)
@@ -247,6 +255,7 @@ class BronzeLayer:
             logger.info("=" * 80)
             logger.info("BRONZE LAYER INGESTION COMPLETED SUCCESSFULLY")
             logger.info(f"Total records ingested: {metadata['total_records']}")
+            logger.info(f"Pages processed: {pages_processed}")
             logger.info(f"File path: {metadata['file_path']}")
             logger.info(f"File size: {metadata['file_size_bytes']:,} bytes")
             logger.info("=" * 80)

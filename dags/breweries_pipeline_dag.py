@@ -79,7 +79,7 @@ with DAG(
     default_args=default_args,
     description='End-to-end Breweries data pipeline (Bronze → Silver → Gold)',
     schedule_interval='0 2 * * *',  # Daily at 2 AM UTC
-    start_date=days_ago(1),
+    start_date=datetime(2026, 1, 21),  # Fixed start date
     catchup=False,
     max_active_runs=1,
     tags=['breweries', 'medallion', 'data-lake'],
@@ -112,9 +112,10 @@ with DAG(
             
             # Push metadata to XCom for downstream tasks
             metadata = {
-                'total_records': result['total_breweries'],
-                'pages_processed': result['pages_processed'],
-                'ingestion_path': result['output_path'],
+                'total_records': result['total_records'],
+                'ingestion_id': result['ingestion_id'],
+                'ingestion_path': result['file_path'],
+                'pages_processed': result.get('pages_processed', 0),
                 'status': 'success'
             }
             
@@ -157,8 +158,10 @@ with DAG(
         
         try:
             with SilverLayer() as silver:
-                # Transform Bronze to Silver
-                result = silver.transform_breweries()
+                # Transform Bronze to Silver (only the latest ingestion)
+                result = silver.transform_breweries(
+                    ingestion_path=bronze_metadata['ingestion_path']
+                )
                 
                 # Validate transformation
                 if result['quality_metrics']['total_records'] == 0:
@@ -170,6 +173,8 @@ with DAG(
                     'completeness_rate': result['quality_metrics'].get('completeness_rate', 0),
                     'coordinate_coverage': result['quality_metrics'].get('coordinate_coverage', 0),
                     'contact_coverage': result['quality_metrics'].get('contact_coverage', 0),
+                    'distinct_countries': len(result['quality_metrics'].get('by_country', {})),
+                    'distinct_types': len(result['quality_metrics'].get('by_type', {})),
                     'output_path': result['output_path'],
                     'transformation_time': result['transformation_time_seconds'],
                     'status': result['status']
@@ -178,6 +183,8 @@ with DAG(
                 print(f"\n✅ Silver transformation completed successfully!")
                 print(f"   Input records: {metadata['input_records']:,}")
                 print(f"   Output records: {metadata['output_records']:,}")
+                print(f"   Distinct countries: {metadata['distinct_countries']}")
+                print(f"   Distinct brewery types: {metadata['distinct_types']}")
                 print(f"   Completeness rate: {metadata['completeness_rate']}%")
                 print(f"   Coordinate coverage: {metadata['coordinate_coverage']}%")
                 print(f"   Contact coverage: {metadata['contact_coverage']}%")
@@ -273,6 +280,10 @@ with DAG(
         print("=" * 80)
         print("PIPELINE VALIDATION")
         print("=" * 80)
+        
+        # Check if all metadata is available
+        if not bronze_metadata or not silver_metadata or not gold_metadata:
+            raise ValueError("Missing metadata from upstream tasks")
         
         # Validate each layer
         validations = {

@@ -1,9 +1,9 @@
 # ============================================================================
 # Breweries Data Lake - Dockerfile
-# Base: Apache Airflow 3.0 with Python 3.11
+# Base: Apache Airflow 2.9.3 with Python 3.11
 # ============================================================================
 
-FROM apache/airflow:3.0.0-python3.11
+FROM apache/airflow:2.9.3-python3.11
 
 USER root
 
@@ -31,9 +31,6 @@ RUN apt-get update && \
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64/
 
 USER airflow
-
-# Remove problematic provider that causes initialization errors
-RUN pip uninstall -y apache-airflow-providers-common-messaging || true
 
 # Copy requirements file
 COPY requirements.txt /tmp/requirements.txt

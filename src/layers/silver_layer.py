@@ -96,7 +96,8 @@ class SilverLayer:
     def _read_bronze_data(
         self,
         dataset_name: str = "breweries",
-        partition_date: Optional[Dict[str, int]] = None
+        partition_date: Optional[Dict[str, int]] = None,
+        ingestion_path: Optional[str] = None
     ) -> DataFrame:
         """
         Read raw JSON data from Bronze layer.
@@ -104,20 +105,25 @@ class SilverLayer:
         Args:
             dataset_name (str): Name of the dataset
             partition_date (dict, optional): Partition filter
+            ingestion_path (str, optional): Specific file path to read (for incremental processing)
             
         Returns:
             DataFrame: Raw data from Bronze layer
         """
+        # If specific ingestion path provided, read only that file
+        if ingestion_path:
+            path = ingestion_path
+            logger.info(f"Reading specific Bronze ingestion from: {path}")
         # Build path with optional partition filter
-        if partition_date:
+        elif partition_date:
             year = partition_date.get('year', '*')
             month = partition_date.get('month', '*')
             day = partition_date.get('day', '*')
             path = f"{self.bronze_path}/{dataset_name}/year={year}/month={month:02d}/day={day:02d}/*.json"
+            logger.info(f"Reading Bronze data with partition filter from: {path}")
         else:
             path = f"{self.bronze_path}/{dataset_name}/year=*/month=*/day=*/*.json"
-        
-        logger.info(f"Reading Bronze data from: {path}")
+            logger.info(f"Reading ALL Bronze data from: {path}")
         
         # Read JSON files with schema
         # Use multiLine=True because Bronze saves as JSON array (pretty-printed)
@@ -355,7 +361,8 @@ class SilverLayer:
     def transform_breweries(
         self,
         partition_date: Optional[Dict[str, int]] = None,
-        partition_by: Optional[List[str]] = None
+        partition_by: Optional[List[str]] = None,
+        ingestion_path: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Complete transformation pipeline from Bronze to Silver layer.
@@ -364,6 +371,7 @@ class SilverLayer:
         Args:
             partition_date (dict, optional): Filter Bronze data by date
             partition_by (list, optional): Columns to partition Silver data by
+            ingestion_path (str, optional): Specific Bronze file to process (for incremental loads)
             
         Returns:
             dict: Transformation metadata and quality metrics
@@ -371,7 +379,7 @@ class SilverLayer:
         Example:
             >>> silver = SilverLayer()
             >>> metadata = silver.transform_breweries(
-            ...     partition_by=["country_normalized", "state"]
+            ...     ingestion_path="/path/to/specific/file.json"
             ... )
         """
         logger.info("=" * 80)
@@ -384,7 +392,8 @@ class SilverLayer:
             # 1. Read Bronze data
             df_bronze = self._read_bronze_data(
                 dataset_name="breweries",
-                partition_date=partition_date
+                partition_date=partition_date,
+                ingestion_path=ingestion_path
             )
             
             # 2. Clean and normalize
