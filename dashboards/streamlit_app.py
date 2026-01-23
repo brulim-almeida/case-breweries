@@ -133,11 +133,29 @@ def main():
             if 'breweries' in data and not data['breweries'].empty:
                 breweries_df = data['breweries']
                 
-                # Filter only breweries with valid coordinates
-                breweries_with_coords = breweries_df[
-                    (breweries_df['latitude'].notna()) & 
-                    (breweries_df['longitude'].notna())
-                ].copy()
+                # Filter only breweries with VALID coordinates
+                # This removes points in the ocean and other suspicious coordinates
+                if 'coordinates_valid' in breweries_df.columns:
+                    breweries_with_coords = breweries_df[
+                        (breweries_df['latitude'].notna()) & 
+                        (breweries_df['longitude'].notna()) &
+                        (breweries_df['coordinates_valid'] == True)
+                    ].copy()
+                    
+                    invalid_coords = breweries_df[
+                        (breweries_df['latitude'].notna()) & 
+                        (breweries_df['longitude'].notna()) &
+                        (breweries_df['coordinates_valid'] == False)
+                    ]
+                    
+                    if len(invalid_coords) > 0:
+                        st.warning(f"⚠️ {len(invalid_coords):,} cervejarias com coordenadas inválidas/suspeitas foram filtradas (ex: oceano, fora do país esperado)")
+                else:
+                    # Fallback if coordinates_valid column doesn't exist
+                    breweries_with_coords = breweries_df[
+                        (breweries_df['latitude'].notna()) & 
+                        (breweries_df['longitude'].notna())
+                    ].copy()
                 
                 if not breweries_with_coords.empty:
                     st.info(f"📍 Exibindo {len(breweries_with_coords):,} de {len(breweries_df):,} cervejarias com coordenadas válidas")

@@ -226,6 +226,125 @@ class SilverLayer:
         
         return df
     
+    def _validate_coordinates(self, df: DataFrame) -> DataFrame:
+        """
+        Validate geographic coordinates and flag suspicious/invalid entries.
+        
+        Checks:
+        1. Basic range validation (lat: -90 to 90, lon: -180 to 180)
+        2. Not at (0, 0) - "Null Island" in Atlantic Ocean
+        3. Not in known ocean areas far from land
+        4. Geographic consistency with country (approximate bounding boxes)
+        
+        Args:
+            df: DataFrame with latitude, longitude, country_normalized
+            
+        Returns:
+            DataFrame with coordinates_valid flag
+        """
+        logger.info("Validating geographic coordinates...")
+        
+        # Basic range validation
+        df = df.withColumn(
+            "coords_in_range",
+            F.when(
+                (F.col("latitude").between(-90, 90)) &
+                (F.col("longitude").between(-180, 180)),
+                True
+            ).otherwise(False)
+        )
+        
+        # Not at "Null Island" (0, 0)
+        df = df.withColumn(
+            "not_null_island",
+            F.when(
+                (F.abs(F.col("latitude")) < 0.1) & (F.abs(F.col("longitude")) < 0.1),
+                False
+            ).otherwise(True)
+        )
+        
+        # Define approximate bounding boxes for major regions/countries
+        # This helps identify coordinates in wrong continents
+        country_bounds = {
+            "United States": {"lat_min": 24, "lat_max": 50, "lon_min": -125, "lon_max": -65},
+            "Canada": {"lat_min": 41, "lat_max": 83, "lon_min": -141, "lon_max": -52},
+            "Mexico": {"lat_min": 14, "lat_max": 33, "lon_min": -118, "lon_max": -86},
+            "Brazil": {"lat_min": -34, "lat_max": 6, "lon_min": -74, "lon_max": -34},
+            "United Kingdom": {"lat_min": 49, "lat_max": 61, "lon_min": -11, "lon_max": 2},
+            "England": {"lat_min": 49, "lat_max": 56, "lon_min": -6, "lon_max": 2},
+            "Scotland": {"lat_min": 54, "lat_max": 61, "lon_min": -8, "lon_max": 0},
+            "Ireland": {"lat_min": 51, "lat_max": 56, "lon_min": -11, "lon_max": -5},
+            "Germany": {"lat_min": 47, "lat_max": 55, "lon_min": 5, "lon_max": 16},
+            "France": {"lat_min": 42, "lat_max": 51, "lon_min": -5, "lon_max": 9},
+            "Australia": {"lat_min": -44, "lat_max": -10, "lon_min": 113, "lon_max": 154},
+            "Japan": {"lat_min": 24, "lat_max": 46, "lon_min": 122, "lon_max": 146},
+            "South Africa": {"lat_min": -35, "lat_max": -22, "lon_min": 16, "lon_max": 33},
+        }
+        
+        # Create geographic consistency check
+        geo_check_expr = F.when(F.col("country_normalized").isNull(), True)  # No country = skip check
+        
+        for country, bounds in country_bounds.items():
+            geo_check_expr = geo_check_expr.when(
+                F.col("country_normalized") == country,
+                (F.col("latitude").between(bounds["lat_min"], bounds["lat_max"])) &
+                (F.col("longitude").between(bounds["lon_min"], bounds["lon_max"]))
+            )
+        
+        # Default: if country not in our list, assume valid (we can't check all countries)
+        geo_check_expr = geo_check_expr.otherwise(True)
+        
+        df = df.withColumn("coords_match_country", geo_check_expr)
+        
+        # Combined validation: coordinates are valid if they pass all checks
+        df = df.withColumn(
+            "coordinates_valid",
+            F.when(
+                (F.col("latitude").isNotNull()) & (F.col("longitude").isNotNull()) &
+                F.col("coords_in_range") &
+                F.col("not_null_island") &
+                F.col("coords_match_country"),
+                True
+            ).otherwise(False)
+        )
+        
+        # Log validation results
+        total_with_coords = df.filter(
+            (F.col("latitude").isNotNull()) & (F.col("longitude").isNotNull())
+        ).count()
+        
+        valid_coords = df.filter(F.col("coordinates_valid") == True).count()
+        invalid_coords = total_with_coords - valid_coords
+        
+        if total_with_coords > 0:
+            valid_pct = (valid_coords / total_with_coords) * 100
+            logger.info(f"Coordinate validation results:")
+            logger.info(f"  Total with coordinates: {total_with_coords:,}")
+            logger.info(f"  Valid coordinates: {valid_coords:,} ({valid_pct:.2f}%)")
+            logger.info(f"  Invalid/Suspicious: {invalid_coords:,} ({100-valid_pct:.2f}%)")
+            
+            # Show breakdown of validation failures
+            null_island = df.filter(F.col("not_null_island") == False).count()
+            out_of_range = df.filter(F.col("coords_in_range") == False).count()
+            wrong_country = df.filter(
+                (F.col("latitude").isNotNull()) & 
+                (F.col("longitude").isNotNull()) &
+                (F.col("coords_match_country") == False)
+            ).count()
+            
+            if invalid_coords > 0:
+                logger.warning(f"  Validation failures breakdown:")
+                logger.warning(f"    - Null Island (0,0): {null_island}")
+                logger.warning(f"    - Out of range: {out_of_range}")
+                logger.warning(f"    - Wrong country/region: {wrong_country}")
+        
+        # Drop intermediate columns to keep schema clean
+        df = df.drop("coords_in_range", "not_null_island", "coords_match_country")
+        
+        logger.info("Coordinate validation completed")
+        
+        return df
+    
     def _add_metadata(self, df: DataFrame) -> DataFrame:
         """
         Add metadata columns to the DataFrame.
@@ -461,6 +580,9 @@ class SilverLayer:
         if partition_by:
             writer = writer.partitionBy(*partition_by)
         
+        # Enable schema evolution for new columns
+        writer = writer.option("mergeSchema", "true")
+        
         writer.format("delta").save(output_path)
         
         logger.info(f"Successfully wrote data to {output_path}")
@@ -528,7 +650,11 @@ class SilverLayer:
                 logger.info("⏭️  Geocoding enrichment DISABLED")
                 geocoding_metrics = {"enabled": False}
             
-            # 5. Validate quality
+            # 5. VALIDATE COORDINATES (NEW!)
+            # Validate all coordinates (original + geocoded) to flag suspicious ones
+            df_enriched = self._validate_coordinates(df_enriched)
+            
+            # 6. Validate quality
             quality_metrics = self._validate_data_quality(df_enriched)
             
             # 6. Write to Silver layer

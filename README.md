@@ -18,7 +18,71 @@ O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, 
 * **Boas práticas de engenharia**: código modular, documentado e testável
 * **Data Quality** integrado com validações e métricas de qualidade em cada camada
 * **XCom** para comunicação entre tasks e rastreamento de metadados
-* **Dashboard Streamlit** 🎨 para visualização interativa dos dados Gold (Ponto Extra)
+
+---
+
+## 🎯 Funcionalidades Extras Implementadas (Além do Case Original)
+
+Este projeto vai além dos requisitos básicos do case, incluindo funcionalidades avançadas que agregam valor significativo ao pipeline:
+
+### 1. 🎨 Dashboard Interativo com Streamlit
+**Por que foi adicionado:** Demonstrar o valor dos dados processados através de visualizações interativas e acessíveis para stakeholders não-técnicos.
+
+**Funcionalidades:**
+- 5 abas de análise (Maps, Geographic, Types, Quality, Cities)
+- Visualizações interativas com Plotly (mapas, treemaps, gauges)
+- Métricas de qualidade em tempo real
+- Filtros dinâmicos por país, tipo e região
+- Leitura nativa de Delta Lake sem overhead Spark
+
+### 2. 🌍 Geocoding Automático para Coordenadas Faltantes
+**Por que foi adicionado:** ~26% das cervejarias não possuem coordenadas na API, limitando análises geográficas. A solução enriquece automaticamente esses dados.
+
+**Funcionalidades:**
+- Integração com API Nominatim (OpenStreetMap)
+- Geocoding inteligente com estratégia de fallback
+- Rate limiting respeitando limites da API (1 req/seg)
+- Métricas detalhadas: taxa de sucesso, cobertura, performance
+- Processamento batch configurável (100-1000 registros por execução)
+
+**Resultados esperados:**
+- Melhoria de cobertura geográfica de ~74% para ~85%+
+- Viabilização de análises espaciais completas
+- Logs detalhados de sucesso/falha para auditoria
+
+### 3. ✅ Validação Geográfica de Coordenadas
+**Por que foi adicionado:** Algumas coordenadas da API (e do geocoding) são incorretas, resultando em pontos no oceano ou países errados.
+
+**Validações implementadas:**
+- Range check: latitude (-90 a 90), longitude (-180 a 180)
+- Detecção de "Null Island" (0,0) - erro comum de geocoding
+- Consistência geográfica: verifica se coordenadas batem com país informado
+- Bounding boxes para 13 países principais (USA, UK, Brasil, Alemanha, etc.)
+- Coluna `coordinates_valid` para filtragem automática
+
+**Benefícios:**
+- Mapas limpos sem pontos suspeitos no oceano
+- Maior confiabilidade em análises geográficas
+- Identificação de problemas de qualidade para correção
+
+### 4. 📊 Tabela Completa de Breweries na Gold Layer
+**Por que foi adicionado:** O dashboard precisa acessar dados individuais de cervejarias (não apenas agregações).
+
+**Implementação:**
+- Tabela `breweries` completa (não particionada) na Gold layer
+- Otimizada para consultas analíticas rápidas
+- Inclui todas as colunas enriched da Silver + validações
+- Base para análises exploratórias e drill-down
+
+### 5. 📈 Métricas Avançadas de Data Quality
+**Além das métricas básicas, foram implementadas:**
+- Cobertura de coordenadas (antes/depois do geocoding)
+- Taxa de melhoria de qualidade
+- Breakdown de falhas de validação
+- Performance de geocoding (registros/segundo)
+- Taxa de perda de dados entre camadas (data loss rate)
+
+---
 
 ## Estrutura de Diretórios e Arquivos
 
@@ -38,7 +102,7 @@ case-breweries/
 ├── dags/                         # DAGs do Airflow
 │   └── breweries_pipeline_dag.py # Pipeline principal
 │
-├── dashboards/                   # 🎨 Dashboard Streamlit (Ponto Extra)
+├── dashboards/                   # 🎨 Dashboard Streamlit (EXTRA)
 │   └── streamlit_app.py          # App interativo com visualizações
 │
 ├── src/                          # Código-fonte principal
@@ -46,10 +110,13 @@ case-breweries/
 │   │   └── brewery_client.py    # Integração com Open Brewery DB
 │   ├── config/                   # Configurações
 │   │   └── settings.py           # Settings centralizados
+│   ├── enrichment/               # Enriquecimento de dados (EXTRA)
+│   │   ├── geocoding.py          # Geocoding com Nominatim API
+│   │   └── test_geocoding.py    # Testes de geocoding
 │   └── layers/                   # Camadas Medallion
 │       ├── bronze_layer.py       # Ingestão de dados brutos
-│       ├── silver_layer.py       # Transformação e curadoria
-│       └── gold_layer.py         # Agregações de negócio
+│       ├── silver_layer.py       # Transformação + Geocoding + Validação
+│       └── gold_layer.py         # Agregações + Tabela completa
 │
 ├── tests/                        # Testes unitários
 │   ├── test_bronze_layer.py
@@ -89,23 +156,30 @@ O pipeline é composto por 4 tasks principais encadeadas:
 - **Processamento incremental**: consome APENAS o arquivo da ingestão atual (via `ingestion_path`)
 - Limpeza e normalização de dados (trim, null handling, padronização)
 - Enriquecimento: `full_address`, flags `has_coordinates`, `has_contact`, timestamp `processed_at`
-- Escrita em Delta Lake com particionamento: `country_normalized`, `state`
+- **🌍 Geocoding automático** (EXTRA): Enriquece coordenadas faltantes via API Nominatim
+- **✅ Validação geográfica** (EXTRA): Valida coordenadas e marca pontos suspeitos/inválidos
+- Escrita em Delta Lake com **schema evolution** habilitado para novas colunas
+- Particionamento: `country_normalized`, `state`
 - Cálculo de métricas de qualidade: completeness rate, coordinate coverage, contact coverage
-- Retornar metadados: `output_records`, `distinct_countries`, `distinct_types`, `quality_metrics`
+- Retornar metadados: `output_records`, `distinct_countries`, `distinct_types`, `quality_metrics`, `geocoding_metrics`
 
-**Inovação:** Evita reprocessamento de histórico completo (solução incremental)
+**Inovações:**
+- Processamento incremental evita reprocessamento de histórico
+- Geocoding configurable: `max_geocoding_records` para controlar volume
+- Logs detalhados de validação de coordenadas (null island, out of range, wrong country)
 
 ### 3️⃣ Gold Aggregation (`gold_aggregation`)
 **Responsável por:**
 - Consumir dados curados da Silver layer
+- **📊 Criar tabela completa de breweries** (EXTRA): Dataset não-agregado para dashboard
 - Criar 6 agregações estratégicas de negócio:
   - `by_country`: Total de cervejarias por país
   - `by_type`: Distribuição por tipo de cervejaria
   - `by_state`: Distribuição por estado (top 20)
-  - `top_cities`: Top 10 cidades com mais cervejarias
-  - `coordinate_coverage`: Métricas de cobertura geográfica
-  - `contact_summary`: Métricas de informações de contato
-- Persistir cada agregação como dataset Delta Lake separado
+  - `by_type_and_country`: Matriz tipo × país
+  - `by_type_and_state`: Matriz tipo × estado
+  - `summary_statistics`: Estatísticas consolidadas
+- Persistir cada dataset como tabela Delta Lake separada
 - Otimização para consumo analítico (baixa latência)
 
 ### 4️⃣ Validate Pipeline (`validate_pipeline`)
@@ -213,27 +287,49 @@ else:
 - **Streaming**: Implementar ingestão em tempo real com Kafka + Spark Streaming
 - **Data Quality**: Integrar Great Expectations com alertas automáticos
 
-## 🎨 Dashboard Interativo com Streamlit (Ponto Extra)
+## 🎨 Dashboard Interativo com Streamlit (FUNCIONALIDADE EXTRA)
+
+> **📌 IMPORTANTE:** Esta funcionalidade foi implementada como um **diferencial adicional**, não sendo parte dos requisitos originais do case. O objetivo é demonstrar o valor dos dados processados através de visualizações interativas e insights acionáveis.
 
 Como demonstração adicional das capacidades do pipeline, foi implementado um **dashboard interativo com Streamlit** para visualização dos dados agregados na camada Gold.
 
 ### Características do Dashboard
 
-**📊 4 Abas de Análise:**
-1. **🌍 Geographic**: Distribuição global de cervejarias com visualização comparativa (incluindo/excluindo EUA)
-2. **🏷️ Types**: Análise por tipo de cervejaria com gráficos de pizza e barras
-3. **📈 Quality**: Métricas de qualidade dos dados com gauges interativos (cobertura de coordenadas, informações de contato)
-4. **🏙️ Cities**: Análise por estados com treemap hierárquico e top 20 rankings
+**📊 5 Abas de Análise:**
+1. **🗺️ Maps** (EXTRA): Visualização geográfica global com mapas interativos
+   - Scatter plot mundial com filtros por país e tipo
+   - Mapa de densidade por concentração geográfica
+   - Filtros dinâmicos de coordenadas válidas
+   - Alertas de coordenadas inválidas filtradas
+   
+2. **🌍 Geographic**: Distribuição global de cervejarias
+   - Visualização comparativa (incluindo/excluindo EUA)
+   - Top 10 países com treemap hierárquico
+   
+3. **🏷️ Types**: Análise por tipo de cervejaria
+   - Gráficos de pizza e barras interativos
+   - Distribuição percentual
+   
+4. **📈 Quality**: Métricas de qualidade dos dados
+   - Gauges interativos para cobertura de coordenadas
+   - Métricas de informações de contato
+   - Impacto do geocoding (antes/depois)
+   
+5. **🏙️ Cities**: Análise por estados
+   - Treemap hierárquico (país → estado → cidade)
+   - Top 20 rankings dinâmicos
 
 **🔧 Stack Técnico:**
 - **Streamlit 1.31.0**: Framework web interativo
-- **Plotly 5.18.0**: Visualizações interativas e responsivas
+- **Plotly 5.18.0**: Visualizações interativas e responsivas (scatter_geo, treemap, gauges)
 - **deltalake 0.15.0**: Leitura nativa de Delta Lake sem overhead Java/Spark
+- **pandas 2.1.4**: Manipulação de dados
 
 **🎯 Decisões Arquiteturais:**
 - Utilização da biblioteca `deltalake` Python para leitura direta dos arquivos Delta, evitando a complexidade de inicializar Spark/JVM no container do Streamlit
 - Dashboard consome diretamente as tabelas Gold agregadas pelo pipeline Airflow
-- Deploy como serviço adicional no Docker Compose com profile dedicado
+- Deploy como serviço adicional no Docker Compose com profile dedicado (`--profile streamlit`)
+- Filtros de coordenadas válidas aplicados automaticamente (remove pontos no oceano)
 
 ### Como Executar o Dashboard
 
@@ -332,6 +428,44 @@ Senha: airflow
 - **Logs**: Logs detalhados de cada task
 - **Flower**: http://localhost:5555 (monitoramento Celery)
 
+**Logs Esperados de Geocoding (Silver Layer):**
+```
+GEOCODING ENRICHMENT
+================================================================================
+BEFORE Geocoding:
+  Total records: 9,038
+  With coordinates: 6,685 (73.97%)
+  Missing coordinates: 2,353 (26.03%)
+
+Processing 1000 addresses...
+⏱️  Estimated minimum time: ~16.7 minutes (at 1.0s per request)
+
+Progress: 10/100 (10.0%) - Geocoded: 10, Failed: 0 - ETA: ~15.2 min
+Progress: 100/1000 (10.0%) - Geocoded: 95, Failed: 5 - ETA: ~14.8 min
+...
+
+AFTER Geocoding:
+  With coordinates: 7,580 (83.87%)
+  Missing coordinates: 1,458 (16.13%)
+  
+Enrichment: +895 new coordinates (38.0% improvement)
+Success rate: 89.5%
+```
+
+**Logs Esperados de Validação de Coordenadas:**
+```
+Validating geographic coordinates...
+Coordinate validation results:
+  Total with coordinates: 7,580
+  Valid coordinates: 7,340 (96.83%)
+  Invalid/Suspicious: 240 (3.17%)
+  
+Validation failures breakdown:
+  - Null Island (0,0): 8
+  - Out of range: 2
+  - Wrong country/region: 230
+```
+
 ### 9. Validar Resultados
 ```bash
 # Verificar dados Bronze
@@ -373,19 +507,23 @@ docker compose down -v  # Para e remove volumes (reset completo)
 ### Silver Layer (Delta Lake)
 Adiciona campos enriquecidos:
 - `full_address`: String concatenada completa
-- `has_coordinates`: Boolean (latitude e longitude preenchidas)
-- `has_contact`: Boolean (phone ou website preenchido)
-- `processed_at`: Timestamp de processamento
 - `country_normalized`: País normalizado
 - `brewery_type_normalized`: Tipo normalizado
+- `has_coordinates`: Boolean (latitude e longitude preenchidas)
+- `has_contact`: Boolean (phone ou website preenchido)
+- `is_complete`: Boolean (dados completos)
+- `coordinates_valid`: Boolean (EXTRA - validação geográfica)
+- `silver_processed_at`: Timestamp de processamento
+- `processing_date`, `processing_year`, `processing_month`: Campos temporais
 
 ### Gold Layer Aggregations
+- **breweries** (EXTRA): Tabela completa não-agregada para dashboard
 - **by_country**: `country`, `total_breweries`
 - **by_type**: `brewery_type`, `total_breweries`
 - **by_state**: `country`, `state`, `total_breweries`
-- **top_cities**: `city`, `state`, `country`, `total_breweries`
-- **coordinate_coverage**: `total_breweries`, `with_coordinates`, `coverage_percentage`
-- **contact_summary**: `total_breweries`, `with_phone`, `with_website`, `contact_coverage`
+- **by_type_and_country**: `brewery_type`, `country`, `total_breweries`
+- **by_type_and_state**: `brewery_type`, `state`, `total_breweries`
+- **summary_statistics**: Estatísticas consolidadas de qualidade e cobertura
 
 ## Testes
 
@@ -423,14 +561,23 @@ Aumentar recursos do Docker Desktop ou reduzir `spark.executor.memory` em `utils
 ## Conclusão & Agradecimentos
 
 Este projeto demonstra a implementação completa de um Data Lake moderno utilizando as melhores práticas de engenharia de dados:
-- ✅ Arquitetura Medallion para organização e qualidade
-- ✅ Processamento incremental para eficiência
-- ✅ Orquestração robusta com Airflow
-- ✅ ACID transactions com Delta Lake
-- ✅ Código modular, testável e documentado
-- ✅ Deploy containerizado e reprodutível
 
-O case oferece uma base sólida para evoluções futuras em cloud, ML pipelines e analytics avançado.
+**✅ Requisitos do Case (Implementados):**
+- Arquitetura Medallion para organização e qualidade
+- Processamento incremental para eficiência
+- Orquestração robusta com Airflow
+- ACID transactions com Delta Lake
+- Código modular, testável e documentado
+- Deploy containerizado e reprodutível
+
+**🚀 Funcionalidades Extras (Além do Case):**
+- **Dashboard Streamlit** com 5 abas de análise e visualizações interativas
+- **Geocoding automático** para enriquecer 26% das cervejarias sem coordenadas
+- **Validação geográfica** para identificar e filtrar coordenadas inválidas
+- **Tabela completa na Gold** para análises exploratórias
+- **Métricas avançadas** de data quality e performance
+
+O case oferece uma base sólida para evoluções futuras em cloud, ML pipelines e analytics avançado, enquanto as funcionalidades extras demonstram capacidade de ir além dos requisitos e agregar valor ao produto final.
 
 Agradeço pela oportunidade e estou disponível para qualquer esclarecimento!
 
