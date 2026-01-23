@@ -86,6 +86,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/lakehouse:/opt/airflow/lakehouse
     - ${AIRFLOW_PROJ_DIR:-.}/monitoring:/opt/airflow/monitoring
     - ${AIRFLOW_PROJ_DIR:-.}/tests:/opt/airflow/tests
+    - ${AIRFLOW_PROJ_DIR:-.}/dashboards:/opt/airflow/dashboards
     - ${AIRFLOW_PROJ_DIR:-.}/create_user.py:/opt/airflow/create_user.py
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
@@ -331,6 +332,41 @@ services:
       - "5555:5555"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+    networks:
+      - breweries-network
+
+  # ==========================================================================
+  # Streamlit - Dashboard Analytics
+  # Access: http://localhost:8501
+  # ==========================================================================
+  streamlit:
+    <<: *airflow-common
+    entrypoint: []
+    environment:
+      <<: *airflow-common-env
+      HOME: /home/airflow
+    command: 
+      - bash
+      - -c
+      - |
+        pip install --no-cache-dir streamlit==1.31.0 plotly==5.18.0 deltalake==0.15.0 && \
+        streamlit run /opt/airflow/dashboards/streamlit_app.py --server.port=8501 --server.address=0.0.0.0
+    profiles:
+      - streamlit
+    ports:
+      - "8501:8501"
+    container_name: streamlit
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 5

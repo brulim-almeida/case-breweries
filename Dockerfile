@@ -44,7 +44,7 @@ RUN pip install --no-cache-dir \
     pyarrow==14.0.2
 
 # Set Python path
-ENV PYTHONPATH="${PYTHONPATH}:/opt/airflow/src:/opt/airflow"
+ENV PYTHONPATH="/opt/airflow/src:/opt/airflow:${PYTHONPATH:-}"
 
 # Verify installations
 RUN python --version && \
