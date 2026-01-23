@@ -28,7 +28,8 @@ def load_gold_data():
             'by_country': 'breweries_by_country',
             'by_type': 'breweries_by_type',
             'by_state': 'breweries_by_state',
-            'summary': 'brewery_summary_statistics'
+            'summary': 'brewery_summary_statistics',
+            'breweries': 'breweries'  # Complete table for maps
         }
         
         for key, table_name in table_mapping.items():
@@ -123,9 +124,191 @@ def main():
         st.divider()
         
         # Tabs
-        tab1, tab2, tab3, tab4 = st.tabs(["🌍 Geographic", "🏷️ Types", "📈 Quality", "🏙️ Cities"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🗺️ Maps", "🌍 Geographic", "🏷️ Types", "📈 Quality", "🏙️ Cities"])
         
         with tab1:
+            st.subheader("🗺️ Visualização Geográfica de Cervejarias")
+            
+            # Load breweries data with coordinates
+            if 'breweries' in data and not data['breweries'].empty:
+                breweries_df = data['breweries']
+                
+                # Filter only breweries with valid coordinates
+                breweries_with_coords = breweries_df[
+                    (breweries_df['latitude'].notna()) & 
+                    (breweries_df['longitude'].notna())
+                ].copy()
+                
+                if not breweries_with_coords.empty:
+                    st.info(f"📍 Exibindo {len(breweries_with_coords):,} de {len(breweries_df):,} cervejarias com coordenadas válidas")
+                    
+                    # Sidebar filters
+                    st.sidebar.header("🔍 Filtros do Mapa")
+                    
+                    # Country filter
+                    countries = ['All'] + sorted(breweries_with_coords['country_normalized'].dropna().unique().tolist())
+                    selected_country = st.sidebar.selectbox("País", countries)
+                    
+                    # Type filter
+                    types = ['All'] + sorted(breweries_with_coords['brewery_type_normalized'].dropna().unique().tolist())
+                    selected_type = st.sidebar.selectbox("Tipo de Cervejaria", types)
+                    
+                    # Apply filters
+                    filtered_df = breweries_with_coords.copy()
+                    if selected_country != 'All':
+                        filtered_df = filtered_df[filtered_df['country_normalized'] == selected_country]
+                    if selected_type != 'All':
+                        filtered_df = filtered_df[filtered_df['brewery_type_normalized'] == selected_type]
+                    
+                    # Show metrics after filtering
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("🍺 Cervejarias Filtradas", f"{len(filtered_df):,}")
+                    col2.metric("🌍 Países", filtered_df['country_normalized'].nunique())
+                    col3.metric("🏷️ Tipos", filtered_df['brewery_type_normalized'].nunique())
+                    
+                    st.markdown("---")
+                    
+                    # Map type selector
+                    map_type = st.radio(
+                        "Selecione o tipo de visualização:",
+                        ["🌍 Mapa de Dispersão", "🔥 Mapa de Densidade"],
+                        horizontal=True
+                    )
+                    
+                    if map_type == "🌍 Mapa de Dispersão":
+                        # Scatter map using scatter_geo (works without mapbox token)
+                        fig = px.scatter_geo(
+                            filtered_df,
+                            lat='latitude',
+                            lon='longitude',
+                            hover_name='name',
+                            hover_data={
+                                'brewery_type_normalized': True,
+                                'city': True,
+                                'state': True,
+                                'country_normalized': True,
+                                'latitude': ':.4f',
+                                'longitude': ':.4f'
+                            },
+                            color='brewery_type_normalized',
+                            title=f'Localização de Cervejarias {"- " + selected_country if selected_country != "All" else "(Global)"}',
+                            height=700,
+                            projection='natural earth'
+                        )
+                        fig.update_geos(
+                            showcountries=True,
+                            countrycolor="lightgray",
+                            showcoastlines=True,
+                            coastlinecolor="darkgray",
+                            showland=True,
+                            landcolor="white",
+                            showlakes=True,
+                            lakecolor="lightblue"
+                        )
+                        fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    else:  # Density Map
+                        # Create density heatmap by aggregating nearby locations
+                        st.info("💡 Densidade calculada por concentração geográfica de cervejarias")
+                        
+                        # Aggregate by rounded coordinates to create density
+                        density_df = filtered_df.copy()
+                        density_df['lat_rounded'] = density_df['latitude'].round(1)
+                        density_df['lon_rounded'] = density_df['longitude'].round(1)
+                        
+                        # Aggregate and keep city/state information
+                        density_agg = density_df.groupby(['lat_rounded', 'lon_rounded']).agg({
+                            'id': 'count',
+                            'city': 'first',
+                            'state': 'first',
+                            'country_normalized': 'first'
+                        }).reset_index()
+                        density_agg.columns = ['lat_rounded', 'lon_rounded', 'count', 'city', 'state', 'country_normalized']
+                        
+                        # Create scatter plot with size representing density
+                        fig = px.scatter_geo(
+                            density_agg,
+                            lat='lat_rounded',
+                            lon='lon_rounded',
+                            size='count',
+                            color='count',
+                            color_continuous_scale='YlOrRd',
+                            title=f'Densidade de Cervejarias {"- " + selected_country if selected_country != "All" else "(Global)"}',
+                            labels={'count': 'Concentração'},
+                            height=700,
+                            projection='natural earth',
+                            size_max=60,
+                            hover_data={'city': True, 'state': True, 'country_normalized': True}
+                        )
+                        fig.update_geos(
+                            showcountries=True,
+                            countrycolor="lightgray",
+                            showcoastlines=True,
+                            coastlinecolor="darkgray",
+                            showland=True,
+                            landcolor="white",
+                            showlakes=True,
+                            lakecolor="lightblue"
+                        )
+                        fig.update_layout(margin={"r":0,"t":40,"l":0,"b":0})
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Show density stats
+                        st.markdown(f"**🔥 Regiões com maior densidade:**")
+                        top_density = density_agg.nlargest(10, 'count')
+                        cols = st.columns(5)
+                        for idx, row in enumerate(top_density.iterrows()):
+                            col_idx = idx % 5
+                            with cols[col_idx]:
+                                city_name = row[1]['city'] if pd.notna(row[1]['city']) else 'N/A'
+                                state_name = row[1]['state'] if pd.notna(row[1]['state']) else ''
+                                location = f"{city_name}, {state_name}" if state_name else city_name
+                                st.metric(
+                                    f"📍 {location}",
+                                    f"{row[1]['count']} 🍺"
+                                )
+                    
+                    # Additional insights
+                    st.markdown("---")
+                    st.subheader("📊 Insights Geográficos")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Top cities
+                        top_cities = filtered_df.groupby(['city', 'state', 'country_normalized']).size().reset_index(name='count').nlargest(10, 'count')
+                        st.markdown("**🏙️ Top 10 Cidades**")
+                        for idx, row in top_cities.iterrows():
+                            st.write(f"{idx+1}. {row['city']}, {row['state']} ({row['country_normalized']}) - {row['count']} cervejarias")
+                    
+                    with col2:
+                        # Coverage by country
+                        country_stats = filtered_df.groupby('country_normalized').agg({
+                            'name': 'count',
+                            'latitude': 'mean',
+                            'longitude': 'mean'
+                        }).reset_index()
+                        country_stats.columns = ['País', 'Total', 'Lat Média', 'Lon Média']
+                        st.markdown("**🌍 Estatísticas por País**")
+                        st.dataframe(country_stats.sort_values('Total', ascending=False), hide_index=True, use_container_width=True)
+                    
+                    # Downloadable data
+                    with st.expander("📥 Baixar Dados Filtrados"):
+                        csv = filtered_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download CSV",
+                            data=csv,
+                            file_name=f"breweries_filtered_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                
+                else:
+                    st.warning("⚠️ Nenhuma cervejaria com coordenadas válidas encontrada.")
+            else:
+                st.info("📊 A tabela completa de cervejarias não está disponível. Execute a pipeline completa para gerar os dados.")
+        
+        with tab2:
             st.subheader("Distribuição Global de Cervejarias")
             
             # Two columns for better visualization
@@ -184,7 +367,7 @@ def main():
                     use_container_width=True
                 )
         
-        with tab2:
+        with tab3:
             st.subheader("Análise por Tipo de Cervejaria")
             
             col1, col2 = st.columns(2)
@@ -219,7 +402,7 @@ def main():
             top_type = data['by_type'].iloc[0]
             st.info(f"💡 **Insight:** O tipo mais comum é **{top_type['brewery_type_normalized']}** com {top_type['brewery_count']:,} cervejarias ({top_type['brewery_count']/total_breweries*100:.1f}% do total)")
         
-        with tab3:
+        with tab4:
             st.subheader("Métricas de Qualidade dos Dados")
             
             # Gauges - usar summary
@@ -329,7 +512,7 @@ def main():
                     f"{summary.get('complete_records', 0)/summary.get('total_breweries', 1)*100:.1f}%"
                 )
         
-        with tab4:
+        with tab5:
             st.subheader("Análise por Estado e Cidade")
             
             # State analysis (Top 20)

@@ -251,6 +251,47 @@ class GoldLayer:
         
         return stats
     
+    def _create_complete_breweries_table(self, df: DataFrame) -> DataFrame:
+        """
+        Create a complete, optimized breweries table for analytics and dashboards.
+        This table is denormalized and ready for consumption.
+        
+        Args:
+            df (DataFrame): Input DataFrame from Silver
+            
+        Returns:
+            DataFrame: Complete breweries data optimized for Gold layer
+        """
+        logger.info("Creating complete breweries table for Gold layer")
+        
+        # Select and order columns for better readability
+        complete_df = df.select(
+            "id",
+            "name",
+            "brewery_type_normalized",
+            "street",
+            "address_1",
+            "address_2",
+            "address_3",
+            "city",
+            "state",
+            "postal_code",
+            "country_normalized",
+            "full_address",
+            "longitude",
+            "latitude",
+            "has_coordinates",
+            "phone",
+            "website_url",
+            "has_contact",
+            "is_complete",
+            "silver_processed_at"
+        )
+        
+        logger.info(f"Complete breweries table prepared with {complete_df.count():,} records")
+        
+        return complete_df
+    
     def _write_to_gold(
         self,
         df: DataFrame,
@@ -304,7 +345,16 @@ class GoldLayer:
             # 1. Read Silver data
             df_silver = self._read_silver_data("breweries")
             
-            # 2. Create aggregations
+            # 2. Create complete breweries table (denormalized for consumption)
+            complete_breweries = self._create_complete_breweries_table(df_silver)
+            complete_path = self._write_to_gold(complete_breweries, "breweries", mode="overwrite")
+            aggregations_created.append({
+                "table_name": "breweries",
+                "output_path": complete_path,
+                "record_count": complete_breweries.count()
+            })
+            
+            # 3. Create aggregations
             aggregations = {
                 "breweries_by_type": self._aggregate_by_type(df_silver),
                 "breweries_by_country": self._aggregate_by_country(df_silver),
@@ -314,7 +364,7 @@ class GoldLayer:
                 "brewery_summary_statistics": self._create_summary_statistics(df_silver)
             }
             
-            # 3. Write aggregations to Gold layer
+            # 4. Write aggregations to Gold layer
             for table_name, agg_df in aggregations.items():
                 output_path = self._write_to_gold(agg_df, table_name)
                 aggregations_created.append({
