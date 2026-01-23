@@ -19,6 +19,7 @@ from pyspark.sql.types import (
 
 from utils.delta_spark import initialize_spark, stop_spark
 from src.config.settings import Settings
+from src.enrichment.geocoding import GeocodeEnricher
 
 
 # Configure logging
@@ -255,6 +256,114 @@ class SilverLayer:
         
         return df
     
+    def _enrich_with_geocoding(
+        self,
+        df: DataFrame,
+        max_records: Optional[int] = None
+    ) -> tuple[DataFrame, Dict[str, Any]]:
+        """
+        Enrich data with geocoding for missing coordinates.
+        
+        Args:
+            df: Input DataFrame
+            max_records: Maximum number of records to geocode (for control)
+            
+        Returns:
+            Tuple of (enriched DataFrame, geocoding metrics)
+        """
+        logger.info("=" * 80)
+        logger.info("GEOCODING ENRICHMENT")
+        logger.info("=" * 80)
+        
+        geocoding_start = datetime.now()
+        
+        # Count before enrichment
+        total_records = df.count()
+        before_coords = df.filter(
+            (F.col("latitude").isNotNull()) & (F.col("longitude").isNotNull())
+        ).count()
+        before_missing = total_records - before_coords
+        before_pct = (before_coords / total_records * 100) if total_records > 0 else 0
+        
+        logger.info(f"BEFORE Geocoding:")
+        logger.info(f"  Total records: {total_records:,}")
+        logger.info(f"  With coordinates: {before_coords:,} ({before_pct:.2f}%)")
+        logger.info(f"  Missing coordinates: {before_missing:,} ({100-before_pct:.2f}%)")
+        
+        # Perform geocoding
+        enricher = GeocodeEnricher(self.spark, rate_limit_delay=1.1)
+        df_enriched = enricher.enrich_coordinates(df, max_records=max_records)
+        
+        # Count after enrichment
+        after_coords = df_enriched.filter(
+            (F.col("latitude").isNotNull()) & (F.col("longitude").isNotNull())
+        ).count()
+        after_missing = total_records - after_coords
+        after_pct = (after_coords / total_records * 100) if total_records > 0 else 0
+        
+        # Calculate improvement
+        new_coords = after_coords - before_coords
+        improvement_pct = (new_coords / before_missing * 100) if before_missing > 0 else 0
+        
+        geocoding_time = (datetime.now() - geocoding_start).total_seconds()
+        
+        # Get enricher stats
+        enricher_stats = enricher.get_stats()
+        enricher.close()
+        
+        # Create comprehensive metrics
+        geocoding_metrics = {
+            "enabled": True,
+            "geocoding_time_seconds": round(geocoding_time, 2),
+            "total_records": total_records,
+            "before_geocoding": {
+                "with_coordinates": before_coords,
+                "missing_coordinates": before_missing,
+                "coverage_percentage": round(before_pct, 2)
+            },
+            "after_geocoding": {
+                "with_coordinates": after_coords,
+                "missing_coordinates": after_missing,
+                "coverage_percentage": round(after_pct, 2)
+            },
+            "enrichment_results": {
+                "new_coordinates_added": new_coords,
+                "attempted_geocoding": enricher_stats.get('total_missing', 0),
+                "successful_geocoding": enricher_stats.get('geocoded_count', 0),
+                "failed_geocoding": enricher_stats.get('failed_count', 0),
+                "success_rate_percentage": round(
+                    (enricher_stats.get('geocoded_count', 0) / enricher_stats.get('total_missing', 1) * 100), 2
+                ) if enricher_stats.get('total_missing', 0) > 0 else 0,
+                "improvement_percentage": round(improvement_pct, 2)
+            },
+            "performance": {
+                "records_per_second": round(
+                    enricher_stats.get('geocoded_count', 0) / geocoding_time, 2
+                ) if geocoding_time > 0 else 0,
+                "avg_time_per_record_seconds": round(
+                    geocoding_time / enricher_stats.get('geocoded_count', 1), 2
+                ) if enricher_stats.get('geocoded_count', 0) > 0 else 0
+            }
+        }
+        
+        # Log results
+        logger.info("=" * 80)
+        logger.info("GEOCODING RESULTS")
+        logger.info("=" * 80)
+        logger.info(f"AFTER Geocoding:")
+        logger.info(f"  With coordinates: {after_coords:,} ({after_pct:.2f}%)")
+        logger.info(f"  Missing coordinates: {after_missing:,} ({100-after_pct:.2f}%)")
+        logger.info(f"")
+        logger.info(f"📊 ENRICHMENT SUMMARY:")
+        logger.info(f"  ✅ New coordinates added: {new_coords:,}")
+        logger.info(f"  🎯 Success rate: {geocoding_metrics['enrichment_results']['success_rate_percentage']:.2f}%")
+        logger.info(f"  📈 Coverage improvement: +{improvement_pct:.2f}%")
+        logger.info(f"  ⏱️  Processing time: {geocoding_time:.2f}s")
+        logger.info(f"  ⚡ Speed: {geocoding_metrics['performance']['records_per_second']:.2f} records/sec")
+        logger.info("=" * 80)
+        
+        return df_enriched, geocoding_metrics
+    
     def _validate_data_quality(self, df: DataFrame) -> Dict[str, Any]:
         """
         Validate data quality and generate quality metrics.
@@ -362,7 +471,9 @@ class SilverLayer:
         self,
         partition_date: Optional[Dict[str, int]] = None,
         partition_by: Optional[List[str]] = None,
-        ingestion_path: Optional[str] = None
+        ingestion_path: Optional[str] = None,
+        enable_geocoding: bool = True,
+        max_geocoding_records: Optional[int] = 1000
     ) -> Dict[str, Any]:
         """
         Complete transformation pipeline from Bronze to Silver layer.
@@ -372,6 +483,8 @@ class SilverLayer:
             partition_date (dict, optional): Filter Bronze data by date
             partition_by (list, optional): Columns to partition Silver data by
             ingestion_path (str, optional): Specific Bronze file to process (for incremental loads)
+            enable_geocoding (bool): Enable geocoding enrichment for missing coordinates
+            max_geocoding_records (int, optional): Max records to geocode (None = unlimited)
             
         Returns:
             dict: Transformation metadata and quality metrics
@@ -379,7 +492,9 @@ class SilverLayer:
         Example:
             >>> silver = SilverLayer()
             >>> metadata = silver.transform_breweries(
-            ...     ingestion_path="/path/to/specific/file.json"
+            ...     ingestion_path="/path/to/specific/file.json",
+            ...     enable_geocoding=True,
+            ...     max_geocoding_records=100
             ... )
         """
         logger.info("=" * 80)
@@ -402,10 +517,21 @@ class SilverLayer:
             # 3. Add metadata
             df_enriched = self._add_metadata(df_cleaned)
             
-            # 4. Validate quality
+            # 4. GEOCODING ENRICHMENT (NEW!)
+            geocoding_metrics = None
+            if enable_geocoding:
+                df_enriched, geocoding_metrics = self._enrich_with_geocoding(
+                    df_enriched,
+                    max_records=max_geocoding_records
+                )
+            else:
+                logger.info("⏭️  Geocoding enrichment DISABLED")
+                geocoding_metrics = {"enabled": False}
+            
+            # 5. Validate quality
             quality_metrics = self._validate_data_quality(df_enriched)
             
-            # 5. Write to Silver layer
+            # 6. Write to Silver layer
             default_partitions = partition_by or ["country_normalized", "state"]
             output_path = self._write_to_silver(
                 df_enriched,
@@ -416,7 +542,7 @@ class SilverLayer:
             # Calculate transformation time
             transformation_time = (datetime.now() - transformation_start).total_seconds()
             
-            # Create metadata
+            # Create metadata with geocoding metrics
             metadata = {
                 "status": "success",
                 "transformation_timestamp": transformation_start.isoformat(),
@@ -424,7 +550,8 @@ class SilverLayer:
                 "output_path": output_path,
                 "output_format": "delta",
                 "partition_columns": default_partitions,
-                "quality_metrics": quality_metrics
+                "quality_metrics": quality_metrics,
+                "geocoding_metrics": geocoding_metrics  # NEW!
             }
             
             logger.info("=" * 80)
@@ -432,6 +559,8 @@ class SilverLayer:
             logger.info(f"Total records: {quality_metrics['total_records']:,}")
             logger.info(f"Output path: {output_path}")
             logger.info(f"Transformation time: {transformation_time:.2f}s")
+            if geocoding_metrics and geocoding_metrics.get('enabled'):
+                logger.info(f"Geocoding: +{geocoding_metrics['enrichment_results']['new_coordinates_added']} coordinates")
             logger.info("=" * 80)
             
             return metadata

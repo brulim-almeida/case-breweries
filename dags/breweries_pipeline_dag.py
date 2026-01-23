@@ -134,20 +134,21 @@ with DAG(
         task_id='silver_transformation',
         retries=2,
         retry_delay=timedelta(minutes=5),
-        execution_timeout=timedelta(minutes=45),
+        execution_timeout=timedelta(minutes=60),  # Increased for geocoding
     )
     def transform_silver_data(bronze_metadata: dict, **context):
         """
         Task 2: Transform and curate Bronze data into Silver layer.
+        Includes geocoding enrichment for missing coordinates.
         
         Args:
             bronze_metadata: Metadata from Bronze layer ingestion
             
         Returns:
-            dict: Metadata with transformation statistics
+            dict: Metadata with transformation and geocoding statistics
         """
         print("=" * 80)
-        print("STARTING SILVER LAYER TRANSFORMATION")
+        print("STARTING SILVER LAYER TRANSFORMATION (WITH GEOCODING)")
         print("=" * 80)
         
         # Validate Bronze layer data exists
@@ -158,14 +159,19 @@ with DAG(
         
         try:
             with SilverLayer() as silver:
-                # Transform Bronze to Silver (only the latest ingestion)
+                # Transform Bronze to Silver with geocoding enabled
                 result = silver.transform_breweries(
-                    ingestion_path=bronze_metadata['ingestion_path']
+                    ingestion_path=bronze_metadata['ingestion_path'],
+                    enable_geocoding=True,
+                    max_geocoding_records=100  # Limit for testing; set to None for all
                 )
                 
                 # Validate transformation
                 if result['quality_metrics']['total_records'] == 0:
                     raise ValueError("No records were written to Silver layer")
+                
+                # Extract geocoding metrics
+                geocoding_data = result.get('geocoding_metrics', {})
                 
                 metadata = {
                     'input_records': bronze_metadata['total_records'],
@@ -177,7 +183,10 @@ with DAG(
                     'distinct_types': len(result['quality_metrics'].get('by_type', {})),
                     'output_path': result['output_path'],
                     'transformation_time': result['transformation_time_seconds'],
-                    'status': result['status']
+                    'status': result['status'],
+                    # GEOCODING METRICS (NEW!)
+                    'geocoding_enabled': geocoding_data.get('enabled', False),
+                    'geocoding_stats': geocoding_data.get('enrichment_results', {}) if geocoding_data.get('enabled') else None
                 }
                 
                 print(f"\n✅ Silver transformation completed successfully!")
@@ -189,6 +198,16 @@ with DAG(
                 print(f"   Coordinate coverage: {metadata['coordinate_coverage']}%")
                 print(f"   Contact coverage: {metadata['contact_coverage']}%")
                 print(f"   Transformation time: {metadata['transformation_time']}s")
+                
+                # Display geocoding metrics
+                if metadata['geocoding_enabled'] and metadata['geocoding_stats']:
+                    print(f"\n🗺️  GEOCODING ENRICHMENT METRICS:")
+                    print(f"   ✅ New coordinates added: {metadata['geocoding_stats'].get('new_coordinates_added', 0):,}")
+                    print(f"   🎯 Success rate: {metadata['geocoding_stats'].get('success_rate_percentage', 0):.2f}%")
+                    print(f"   📈 Coverage improvement: +{metadata['geocoding_stats'].get('improvement_percentage', 0):.2f}%")
+                    print(f"   📊 Attempted: {metadata['geocoding_stats'].get('attempted_geocoding', 0):,}")
+                    print(f"   ✔️  Successful: {metadata['geocoding_stats'].get('successful_geocoding', 0):,}")
+                    print(f"   ❌ Failed: {metadata['geocoding_stats'].get('failed_geocoding', 0):,}")
                 
                 return metadata
                 
