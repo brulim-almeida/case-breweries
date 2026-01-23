@@ -18,6 +18,7 @@ O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, 
 * **Boas práticas de engenharia**: código modular, documentado e testável
 * **Data Quality** integrado com validações e métricas de qualidade em cada camada
 * **XCom** para comunicação entre tasks e rastreamento de metadados
+* **Dashboard Streamlit** 🎨 para visualização interativa dos dados Gold (Ponto Extra)
 
 ## Estrutura de Diretórios e Arquivos
 
@@ -27,7 +28,7 @@ case-breweries/
 ├── .env.example                  # Template de configuração
 ├── .gitignore                    # Git ignore rules
 ├── Dockerfile                    # Imagem customizada Airflow + PySpark
-├── docker-compose.yaml           # Orquestração completa (7 serviços)
+├── docker-compose.yaml           # Orquestração completa (8 serviços)
 ├── pytest.ini                    # Configuração de testes
 ├── requirements.txt              # Dependências Python
 │
@@ -36,6 +37,9 @@ case-breweries/
 │
 ├── dags/                         # DAGs do Airflow
 │   └── breweries_pipeline_dag.py # Pipeline principal
+│
+├── dashboards/                   # 🎨 Dashboard Streamlit (Ponto Extra)
+│   └── streamlit_app.py          # App interativo com visualizações
 │
 ├── src/                          # Código-fonte principal
 │   ├── api/                      # Cliente API
@@ -208,6 +212,60 @@ else:
 ### 5. Advanced Analytics
 - **Streaming**: Implementar ingestão em tempo real com Kafka + Spark Streaming
 - **Data Quality**: Integrar Great Expectations com alertas automáticos
+
+## 🎨 Dashboard Interativo com Streamlit (Ponto Extra)
+
+Como demonstração adicional das capacidades do pipeline, foi implementado um **dashboard interativo com Streamlit** para visualização dos dados agregados na camada Gold.
+
+### Características do Dashboard
+
+**📊 4 Abas de Análise:**
+1. **🌍 Geographic**: Distribuição global de cervejarias com visualização comparativa (incluindo/excluindo EUA)
+2. **🏷️ Types**: Análise por tipo de cervejaria com gráficos de pizza e barras
+3. **📈 Quality**: Métricas de qualidade dos dados com gauges interativos (cobertura de coordenadas, informações de contato)
+4. **🏙️ Cities**: Análise por estados com treemap hierárquico e top 20 rankings
+
+**🔧 Stack Técnico:**
+- **Streamlit 1.31.0**: Framework web interativo
+- **Plotly 5.18.0**: Visualizações interativas e responsivas
+- **deltalake 0.15.0**: Leitura nativa de Delta Lake sem overhead Java/Spark
+
+**🎯 Decisões Arquiteturais:**
+- Utilização da biblioteca `deltalake` Python para leitura direta dos arquivos Delta, evitando a complexidade de inicializar Spark/JVM no container do Streamlit
+- Dashboard consome diretamente as tabelas Gold agregadas pelo pipeline Airflow
+- Deploy como serviço adicional no Docker Compose com profile dedicado
+
+### Como Executar o Dashboard
+
+```bash
+# Iniciar todos os serviços incluindo Streamlit
+docker compose --profile streamlit up -d
+
+# Acessar o dashboard
+# URL: http://localhost:8501
+```
+
+O dashboard se conecta automaticamente aos dados da camada Gold e oferece:
+- ✅ Visualizações interativas com zoom, pan e export de imagens
+- ✅ Filtros e drill-down para análise detalhada
+- ✅ Métricas de qualidade em tempo real
+- ✅ Insights automáticos sobre distribuição e cobertura de dados
+
+**💡 Benefícios:**
+- Demonstração visual do valor agregado pelo pipeline
+- Interface amigável para stakeholders não-técnicos
+- Validação imediata da qualidade das agregações Gold
+- Base para desenvolvimento de analytics avançados
+
+### Parar o Dashboard
+
+```bash
+# Parar apenas o Streamlit
+docker compose stop streamlit
+
+# Parar todos os serviços
+docker compose --profile streamlit down
+```
 
 ## Passos para Executar o Projeto
 
