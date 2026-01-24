@@ -280,6 +280,7 @@ class GoldLayer:
             "full_address",
             "longitude",
             "latitude",
+            "coordinates_valid",
             "has_coordinates",
             "phone",
             "website_url",
@@ -315,8 +316,9 @@ class GoldLayer:
         logger.info(f"Mode: {mode}")
         logger.info(f"Records: {df.count():,}")
         
-        # Write in Delta Lake format
-        df.write.mode(mode).format("delta").save(output_path)
+        # Write in Delta Lake format with schema evolution support
+        # overwriteSchema=True allows adding/removing columns when mode=overwrite
+        df.write.mode(mode).format("delta").option("overwriteSchema", "true").save(output_path)
         
         logger.info(f"Successfully wrote aggregation to {output_path}")
         

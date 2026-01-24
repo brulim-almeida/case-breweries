@@ -163,7 +163,7 @@ with DAG(
                 result = silver.transform_breweries(
                     ingestion_path=bronze_metadata['ingestion_path'],
                     enable_geocoding=True,
-                    max_geocoding_records=1000  # Increased limit; set to None for all
+                    max_geocoding_records=100  # Increased limit; set to None for all
                 )
                 
                 # Validate transformation

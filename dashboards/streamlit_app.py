@@ -432,7 +432,9 @@ def main():
                     mode="gauge+number+delta",
                     value=coord_coverage_pct,
                     title={'text': "Coordinate Coverage"},
-                    delta={'reference': 90, 'suffix': '%'},
+                    delta={'reference': 90},
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                    number={'font': {'size': 50}},
                     gauge={
                         'axis': {'range': [None, 100]},
                         'bar': {'color': "darkblue"},
@@ -449,10 +451,12 @@ def main():
                     }
                 ))
                 fig.update_layout(
-                    height=350,
-                    margin=dict(l=20, r=20, t=80, b=60)
+                    height=300,
+                    margin=dict(l=30, r=30, t=60, b=40),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
                 )
-                st.plotly_chart(fig, use_container_width=True, config={'responsive': True})
+                st.plotly_chart(fig, use_container_width=True, key="gauge1")
             
             with col2:
                 contact_pct = (summary.get('with_contact', 0) / summary.get('total_breweries', 1) * 100)
@@ -461,6 +465,8 @@ def main():
                     mode="gauge+number",
                     value=contact_pct,
                     title={'text': "Contact Info Coverage"},
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                    number={'font': {'size': 50}},
                     gauge={
                         'axis': {'range': [None, 100]},
                         'bar': {'color': "darkgreen"},
@@ -472,10 +478,12 @@ def main():
                     }
                 ))
                 fig.update_layout(
-                    height=350,
-                    margin=dict(l=20, r=20, t=80, b=60)
+                    height=300,
+                    margin=dict(l=30, r=30, t=60, b=40),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
                 )
-                st.plotly_chart(fig, use_container_width=True, config={'responsive': True})
+                st.plotly_chart(fig, use_container_width=True, key="gauge2")
             
             with col3:
                 # Overall quality score (média das métricas)
@@ -485,6 +493,8 @@ def main():
                     mode="gauge+number",
                     value=overall_quality,
                     title={'text': "Overall Data Quality"},
+                    domain={'x': [0, 1], 'y': [0, 1]},
+                    number={'font': {'size': 50}},
                     gauge={
                         'axis': {'range': [None, 100]},
                         'bar': {'color': "purple"},
@@ -496,10 +506,12 @@ def main():
                     }
                 ))
                 fig.update_layout(
-                    height=350,
-                    margin=dict(l=20, r=20, t=80, b=60)
+                    height=300,
+                    margin=dict(l=30, r=30, t=60, b=40),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
                 )
-                st.plotly_chart(fig, use_container_width=True, config={'responsive': True})
+                st.plotly_chart(fig, use_container_width=True, key="gauge3")
             
             # Detalhes
             st.markdown("---")
