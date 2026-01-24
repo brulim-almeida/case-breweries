@@ -19,10 +19,13 @@ RUN apt-get update && \
     && mkdir -p /opt/airflow/lakehouse/bronze \
     /opt/airflow/lakehouse/silver \
     /opt/airflow/lakehouse/gold \
+    /opt/airflow/logs \
     /opt/airflow/monitoring \
     /opt/airflow/src \
     /opt/airflow/utils \
     && chown -R airflow:root /opt/airflow/lakehouse \
+    && chmod -R 775 /opt/airflow/lakehouse \
+    && chown -R airflow:root /opt/airflow/logs \
     && chown -R airflow:root /opt/airflow/monitoring \
     && chown -R airflow:root /opt/airflow/src \
     && chown -R airflow:root /opt/airflow/utils

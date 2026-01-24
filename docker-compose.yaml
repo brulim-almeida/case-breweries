@@ -284,8 +284,9 @@ services:
         fi
         
         # Create directories
-        mkdir -p /sources/logs /sources/dags /sources/plugins
+        mkdir -p /sources/logs /sources/dags /sources/plugins /sources/lakehouse/bronze /sources/lakehouse/silver /sources/lakehouse/gold /sources/monitoring
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins,lakehouse,monitoring}
+        chmod -R 775 /sources/lakehouse
         
         # Initialize Airflow
         exec /entrypoint airflow version
@@ -360,8 +361,6 @@ services:
       - |
         pip install --no-cache-dir streamlit==1.31.0 plotly==5.18.0 deltalake==0.15.0 && \
         streamlit run /opt/airflow/dashboards/streamlit_app.py --server.port=8501 --server.address=0.0.0.0
-    profiles:
-      - streamlit
     ports:
       - "8501:8501"
     container_name: streamlit
