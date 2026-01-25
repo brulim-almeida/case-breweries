@@ -4,7 +4,6 @@ O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, 
 
 <img width="935" height="418" alt="image" src="https://github.com/user-attachments/assets/e75faccd-fc85-47a8-84f8-f6b73fb8ccbb" />
 
-
 > 💾 Arquitetura da Pipeline de Dados
 
 ## Resumo dos Principais Conceitos e Tecnologias Utilizadas
@@ -15,6 +14,7 @@ O desafio deste case foi desenvolver um pipeline de dados robusto para extrair, 
 * **Arquitetura Medallion** (Bronze → Silver → Gold) para organização e qualidade dos dados
 * **Processamento incremental** na Silver layer para evitar reprocessamento de dados históricos
 * **Delta Lake** para ACID transactions e versionamento de dados
+* **Great Expectations** para validação automatizada de qualidade de dados
 * **Boas práticas de engenharia**: código modular, documentado e testável
 * **Data Quality** integrado com validações e métricas de qualidade em cada camada
 * **XCom** para comunicação entre tasks e rastreamento de metadados
@@ -74,28 +74,20 @@ Este projeto vai além dos requisitos básicos do case, incluindo funcionalidade
 - Inclui todas as colunas enriched da Silver + validações
 - Base para análises exploratórias e drill-down
 
-### 5. 📈 Métricas Avançadas de Data Quality
-**Além das métricas básicas, foram implementadas:**
-- Cobertura de coordenadas (antes/depois do geocoding)
-- Taxa de melhoria de qualidade
-- Breakdown de falhas de validação
-- Performance de geocoding (registros/segundo)
-- Taxa de perda de dados entre camadas (data loss rate)
-
-### 6. 🔍 Great Expectations - Validação Automatizada de Qualidade
+### 5. 🔍 Great Expectations - Validação Automatizada de Qualidade
 **Por que foi adicionado:** Data quality é crítico em produção. Great Expectations automatiza validação de dados e gera documentação interativa.
 
 **Funcionalidades:**
 - **Validação em 3 camadas:** Bronze, Silver e Gold com expectations específicas
 - **Anomaly Detection:** Detecta variações de volume >20% entre execuções
 - **Data Docs HTML:** Documentação interativa com gráficos e profiling estatístico
-- **28+ Expectations:** Schema, uniqueness, completeness, ranges, domain validation
-- **Integrated no Airflow:** Validação automática após cada camada do pipeline
+- **20+ Expectations:** Schema, uniqueness, completeness, ranges, domain validation
+- **Integrado no Airflow:** Validação automática após cada camada do pipeline
 
 **Validações por Camada:**
-- **Bronze:** Schema API, IDs únicos, volume esperado (5k-50k), tipos conhecidos, coordinate ranges
-- **Silver:** Data loss <5%, país normalizado 100%, 85%+ coords válidas, Null Island detection
-- **Gold:** Agregações não vazias, counts positivos, USA/micro presentes, integridade matemática
+- **Bronze (6 expectations):** IDs únicos, campos obrigatórios, volume esperado (5k-50k), tipos de brewery válidos, coordinate ranges, timestamp validation
+- **Silver (5 expectations):** Data loss <5%, coordinate coverage 85%+, coordinate quality (boolean válido), schema enrichment
+- **Gold (variável):** Agregações não vazias, counts positivos, tipos principais presentes (USA/micro), integridade matemática
 
 **Estatísticas Rastreadas:**
 - Success rate por expectation (% de aprovação)
@@ -110,9 +102,31 @@ Este projeto vai além dos requisitos básicos do case, incluindo funcionalidade
 - Rastreamento de qualidade ao longo do tempo
 - Padrão da indústria (Netflix, Uber, Airbnb)
 
-📄 **Documentação completa:** [GREAT_EXPECTATIONS_GUIDE.md](GREAT_EXPECTATIONS_GUIDE.md)
+📄 **Documentação completa:** [documents/GREAT_EXPECTATIONS_GUIDE.md](documents/GREAT_EXPECTATIONS_GUIDE.md)
 
-### 7. 📊 Pipeline Metrics Dashboard
+### 6. 🧹 Parâmetro clean_before_run para Testes
+**Por que foi adicionado:** Durante testes, executar o pipeline múltiplas vezes causava duplicação de dados na Bronze layer (arquivos JSON acumulam com timestamp).
+
+**Como funciona:**
+- Parâmetro DAG `clean_before_run` (padrão: `false`)
+- Quando `true`: limpa dados Bronze antes da ingestão
+- Silver e Gold usam `overwrite` mode - não precisam limpeza
+- Ideal para ambiente de desenvolvimento/testes
+
+**Como usar:**
+```json
+{
+  "clean_before_run": true
+}
+```
+
+**Benefícios:**
+- Testes repetidos sem duplicação
+- Validações do Great Expectations funcionam corretamente
+- Simplicidade: um parâmetro resolve o problema
+- Produção usa `false` - dados históricos preservados
+
+### 7. 📈 Pipeline Metrics Dashboard
 **Por que foi adicionado:** Monitoramento e observabilidade são essenciais para operação em produção.
 
 **Funcionalidades:**
@@ -139,9 +153,6 @@ Este projeto vai além dos requisitos básicos do case, incluindo funcionalidade
 - Demonstra maturidade operacional
 
 📄 **Metadados salvos em:** `lakehouse/metadata/pipeline_runs.json`
-- Breakdown de falhas de validação
-- Performance de geocoding (registros/segundo)
-- Taxa de perda de dados entre camadas (data loss rate)
 
 ---
 
@@ -156,9 +167,11 @@ case-breweries/
 ├── docker-compose.yaml           # Orquestração completa (8 serviços)
 ├── pytest.ini                    # Configuração de testes
 ├── requirements.txt              # Dependências Python
+├── README.md                     # Documentação principal
 │
-├── airflow/                      # Configurações Airflow
-│   └── README.md                 # Documentação de setup
+├── documents/                    # 📚 Documentação Técnica
+│   ├── GREAT_EXPECTATIONS_GUIDE.md   # Guia completo de validação
+│   └── GEOCODING_INTEGRATION.md      # Documentação de geocoding
 │
 ├── dags/                         # DAGs do Airflow
 │   └── breweries_pipeline_dag.py # Pipeline principal
@@ -172,8 +185,9 @@ case-breweries/
 │   ├── config/                   # Configurações
 │   │   └── settings.py           # Settings centralizados
 │   ├── enrichment/               # Enriquecimento de dados (EXTRA)
-│   │   ├── geocoding.py          # Geocoding com Nominatim API
-│   │   └── test_geocoding.py    # Testes de geocoding
+│   │   └── geocoding.py          # Geocoding com Nominatim API
+│   ├── validation/               # Validação de qualidade (EXTRA)
+│   │   └── ge_validator.py       # Great Expectations validator
 │   └── layers/                   # Camadas Medallion
 │       ├── bronze_layer.py       # Ingestão de dados brutos
 │       ├── silver_layer.py       # Transformação + Geocoding + Validação
@@ -185,12 +199,16 @@ case-breweries/
 │   └── test_gold_layer.py
 │
 ├── utils/                        # Utilitários
-│   └── delta_spark.py            # Helper para Delta Lake
+│   ├── delta_spark.py            # Helper para Delta Lake
+│   └── metadata_manager.py       # Gerenciamento de metadados do pipeline
 │
 ├── lakehouse/                    # Data Lake
 │   ├── bronze/                   # Dados brutos (JSON particionado)
 │   ├── silver/                   # Dados curados (Delta Lake)
-│   └── gold/                     # Agregações (Delta Lake)
+│   ├── gold/                     # Agregações (Delta Lake)
+│   └── metadata/                 # Metadados do pipeline
+│
+├── images/                       # Imagens para documentação
 │
 └── logs/                         # Logs do Airflow
 ```
@@ -478,10 +496,30 @@ Senha: airflow
 ```
 
 ### 7. Executar a DAG
+
+#### Execução Padrão (Produção)
 1. Na interface web, vá em **DAGs**
 2. Localize `breweries_pipeline_dag`
 3. Ative a DAG (toggle on)
 4. Clique em **Trigger DAG** (botão ▶️)
+
+#### Execução para Testes (com limpeza de dados)
+Para testes repetidos, evite duplicação de dados usando o parâmetro `clean_before_run`:
+
+1. Clique em **Trigger DAG w/ config** (botão ▶️ com engrenagem)
+2. Cole a configuração JSON:
+```json
+{
+  "clean_before_run": true
+}
+```
+3. Clique em **Trigger**
+
+> **💡 Nota:** O parâmetro `clean_before_run` limpa apenas a camada Bronze antes da ingestão (arquivos JSON acumulam). Silver e Gold usam `mode="overwrite"` e não precisam limpeza.
+
+**Quando usar cada modo:**
+- **`clean_before_run: false`** (padrão): Produção - preserva histórico e partições por data
+- **`clean_before_run: true`**: Testes/desenvolvimento - evita duplicação de dados
 
 ### 8. Monitorar Execução
 - **Graph View**: Visualizar dependências entre tasks

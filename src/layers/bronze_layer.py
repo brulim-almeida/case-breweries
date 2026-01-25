@@ -350,6 +350,25 @@ class BronzeLayer:
         
         return ingestions
     
+    def clean_all_data(self, dataset_name: str = "breweries") -> None:
+        """
+        Clean all data from Bronze layer for a specific dataset.
+        Useful for testing to avoid data duplication.
+        
+        Args:
+            dataset_name (str): Name of the dataset to clean
+        """
+        import shutil
+        
+        base_path = f"{self.bronze_path}/{dataset_name}"
+        
+        if Path(base_path).exists():
+            logger.info(f"🧹 Cleaning Bronze layer data at: {base_path}")
+            shutil.rmtree(base_path)
+            logger.info(f"✅ Successfully removed all data for dataset: {dataset_name}")
+        else:
+            logger.info(f"ℹ️  No data found to clean at: {base_path}")
+    
     def read_bronze_data(
         self,
         dataset_name: str = "breweries",

@@ -599,7 +599,7 @@ def main():
                 import sys
                 from pathlib import Path
                 sys.path.insert(0, str(Path(__file__).parent.parent))
-                from src.utils.metadata_manager import PipelineMetadataManager
+                from utils.metadata_manager import PipelineMetadataManager
                 
                 metadata_mgr = PipelineMetadataManager()
                 latest_run = metadata_mgr.get_latest_run()

@@ -24,7 +24,8 @@ sys.path.insert(0, str(project_root))
 from src.layers import BronzeLayer, SilverLayer, GoldLayer
 from src.config.settings import Settings
 from src.validation import BreweriesDataValidator
-from src.utils.metadata_manager import PipelineMetadataManager
+from utils.metadata_manager import PipelineMetadataManager
+from utils.delta_spark import initialize_spark, stop_spark
 
 
 # Default arguments for the DAG
@@ -87,6 +88,9 @@ with DAG(
     tags=['breweries', 'medallion', 'data-lake'],
     on_failure_callback=on_failure_callback,
     on_success_callback=on_success_callback,
+    params={
+        'clean_before_run': False,  # Set to True during testing to avoid duplicates
+    }
 ) as dag:
 
     @task(
@@ -106,8 +110,17 @@ with DAG(
         print("STARTING BRONZE LAYER INGESTION")
         print("=" * 80)
         
+        # Get clean_before_run parameter
+        clean_before_run = context['params'].get('clean_before_run', False)
+        
         try:
             bronze = BronzeLayer(bronze_path=Settings.BRONZE_PATH)
+            
+            # Clean data if requested (useful for testing)
+            if clean_before_run:
+                print("\n🧹 CLEANING EXISTING DATA (clean_before_run=True)")
+                bronze.clean_all_data()
+                print("✅ Data cleaned successfully\n")
             
             # Ingest all breweries
             result = bronze.ingest_breweries()
@@ -305,17 +318,12 @@ with DAG(
         print("=" * 80)
         
         try:
-            from pyspark.sql import SparkSession
-            from delta import DeltaTable
+            # Use the project's Spark session with Delta Lake support
+            spark = initialize_spark(app_name="BreweriesValidation-Bronze")
             
-            spark = SparkSession.builder \
-                .appName("BreweriesValidation") \
-                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-                .getOrCreate()
-            
-            # Read Bronze data
-            bronze_df = spark.read.format("delta").load(Settings.BRONZE_PATH)
+            # Read Bronze data (JSON format) - Bronze stores in JSON, not Delta
+            bronze_path = f"{Settings.BRONZE_PATH}/breweries/year=*/month=*/day=*/*.json"
+            bronze_df = spark.read.option("multiLine", "true").json(bronze_path)
             
             # Get previous count for anomaly detection
             previous_count = context['ti'].xcom_pull(
@@ -352,6 +360,10 @@ with DAG(
             print(f"❌ Bronze validation failed: {e}")
             # Don't fail the pipeline, just log
             return {'success': False, 'error': str(e)}
+        finally:
+            # Always stop Spark session
+            if 'spark' in locals():
+                stop_spark(spark)
     
     @task(
         task_id='validate_silver_quality',
@@ -381,16 +393,12 @@ with DAG(
         print("=" * 80)
         
         try:
-            from pyspark.sql import SparkSession
+            # Use the project's Spark session with Delta Lake support
+            spark = initialize_spark(app_name="BreweriesValidation-Silver")
             
-            spark = SparkSession.builder \
-                .appName("BreweriesValidation") \
-                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-                .getOrCreate()
-            
-            # Read Silver data
-            silver_df = spark.read.format("delta").load(Settings.SILVER_PATH)
+            # Read Silver data (breweries table)
+            silver_path = f"{Settings.SILVER_PATH}/breweries"
+            silver_df = spark.read.format("delta").load(silver_path)
             
             # Initialize validator
             validator = BreweriesDataValidator(spark=spark, enable_data_docs=True)
@@ -422,6 +430,10 @@ with DAG(
         except Exception as e:
             print(f"❌ Silver validation failed: {e}")
             return {'success': False, 'error': str(e)}
+        finally:
+            # Always stop Spark session
+            if 'spark' in locals():
+                stop_spark(spark)
     
     @task(
         task_id='validate_gold_quality',
@@ -450,13 +462,8 @@ with DAG(
         print("=" * 80)
         
         try:
-            from pyspark.sql import SparkSession
-            
-            spark = SparkSession.builder \
-                .appName("BreweriesValidation") \
-                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-                .getOrCreate()
+            # Use the project's Spark session with Delta Lake support
+            spark = initialize_spark(app_name="BreweriesValidation-Gold")
             
             # Read Gold aggregations
             aggregations = {}
@@ -503,6 +510,10 @@ with DAG(
         except Exception as e:
             print(f"❌ Gold validation failed: {e}")
             return {'success': False, 'error': str(e)}
+        finally:
+            # Always stop Spark session
+            if 'spark' in locals():
+                stop_spark(spark)
 
     @task(
         task_id='validate_pipeline',
