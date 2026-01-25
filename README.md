@@ -106,7 +106,8 @@ Aggregated tables for analytics:
 
 ## Orchestration
 
-<img width="297" height="313" alt="DAG" src="https://github.com/user-attachments/assets/0d298aac-51a8-4554-b186-54f322c1f7c0" />
+<img width="540" height="320" alt="image" src="https://github.com/user-attachments/assets/9c161e65-4ff7-49ab-b7f7-84b2b5cfbede" />
+
 
 **Engine:** Airflow with TaskFlow API + CeleryExecutor
 
