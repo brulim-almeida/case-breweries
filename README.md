@@ -8,6 +8,29 @@ Pipeline de dados para extrair, processar e armazenar informações de cervejari
 
 ---
 
+## The Story
+
+A beverage distribution company wants to expand into the craft beer market. Before investing in new routes and warehouses, they need answers: *Where are the opportunities? What's the market composition? Can we trust the data?*
+
+The challenge: raw API data is incomplete (~26% missing coordinates), inconsistent (multiple country name formats), and has quality issues (some coordinates point to the ocean).
+
+**This pipeline solves it by:**
+- Enriching missing coordinates via geocoding (74% → 86% coverage)
+- Validating geographic data (no more "ocean breweries")
+- Pre-aggregating analytics tables for immediate business use
+
+**Questions it answers:**
+| Question | Data Source |
+|----------|-------------|
+| Which regions have the most breweries? | `by_country`, `by_state` |
+| What's the market composition? | `by_type`, `by_type_and_country` |
+| Where should we focus expansion? | Dashboard Maps, `by_state` |
+| Is the data reliable? | Great Expectations reports |
+
+📄 **Full business context:** [documents/BUSINESS_CONTEXT.md](documents/BUSINESS_CONTEXT.md)
+
+---
+
 ## Quick Start
 
 ### Prerequisites
