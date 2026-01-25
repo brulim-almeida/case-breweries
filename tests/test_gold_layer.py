@@ -55,82 +55,89 @@ def sample_silver_data(spark_for_data, temp_silver_path):
         StructField("id", StringType(), nullable=False),
         StructField("name", StringType(), nullable=True),
         StructField("brewery_type", StringType(), nullable=True),
+        StructField("street", StringType(), nullable=True),
         StructField("address_1", StringType(), nullable=True),
         StructField("address_2", StringType(), nullable=True),
         StructField("address_3", StringType(), nullable=True),
         StructField("city", StringType(), nullable=True),
-        StructField("state_province", StringType(), nullable=True),
+        StructField("state", StringType(), nullable=True),
         StructField("postal_code", StringType(), nullable=True),
         StructField("country", StringType(), nullable=True),
         StructField("longitude", DoubleType(), nullable=True),
         StructField("latitude", DoubleType(), nullable=True),
         StructField("phone", StringType(), nullable=True),
         StructField("website_url", StringType(), nullable=True),
-        StructField("state", StringType(), nullable=True),
-        StructField("street", StringType(), nullable=True),
         StructField("brewery_type_normalized", StringType(), nullable=True),
         StructField("country_normalized", StringType(), nullable=True),
+        StructField("full_address", StringType(), nullable=True),
+        StructField("coordinates_valid", IntegerType(), nullable=True),
         StructField("has_coordinates", IntegerType(), nullable=True),
         StructField("has_contact", IntegerType(), nullable=True),
         StructField("is_complete", IntegerType(), nullable=True),
-        StructField("ingestion_timestamp", TimestampType(), nullable=True),
+        StructField("silver_processed_at", TimestampType(), nullable=True),
     ])
-    
+
     # Create diverse sample data with different types and locations
+    now = datetime.now()
     data = [
         # US - California breweries
-        ("cal-1", "SF Brewery", "micro", "123 Main St", None, None, "San Francisco", "CA", 
-         "94102", "United States", -122.4194, 37.7749, "415-555-0001", 
-         "http://sfbrewery.com", "California", "123 Main St", "micro", 
-         "united states", 1, 1, 1, datetime.now()),
-        ("cal-2", "LA Brewpub", "brewpub", "456 Ocean Ave", None, None, "Los Angeles", "CA",
-         "90001", "United States", -118.2437, 34.0522, None, "http://labrewpub.com", 
-         "California", "456 Ocean Ave", "brewpub", "united states", 1, 1, 1, datetime.now()),
-        ("cal-3", "San Diego Large", "large", "789 Bay Rd", None, None, "San Diego", "CA",
-         "92101", "United States", -117.1611, 32.7157, "619-555-0003", 
-         "http://sdlarge.com", "California", "789 Bay Rd", "large", 
-         "united states", 1, 1, 1, datetime.now()),
-        
+        ("cal-1", "SF Brewery", "micro", "123 Main St", "123 Main St", None, None,
+         "San Francisco", "California", "94102", "United States", -122.4194, 37.7749,
+         "415-555-0001", "http://sfbrewery.com", "micro", "united states",
+         "123 Main St, San Francisco, CA 94102", 1, 1, 1, 1, now),
+        ("cal-2", "LA Brewpub", "brewpub", "456 Ocean Ave", "456 Ocean Ave", None, None,
+         "Los Angeles", "California", "90001", "United States", -118.2437, 34.0522,
+         None, "http://labrewpub.com", "brewpub", "united states",
+         "456 Ocean Ave, Los Angeles, CA 90001", 1, 1, 1, 1, now),
+        ("cal-3", "San Diego Large", "large", "789 Bay Rd", "789 Bay Rd", None, None,
+         "San Diego", "California", "92101", "United States", -117.1611, 32.7157,
+         "619-555-0003", "http://sdlarge.com", "large", "united states",
+         "789 Bay Rd, San Diego, CA 92101", 1, 1, 1, 1, now),
+
         # US - Texas breweries
-        ("tx-1", "Austin Micro", "micro", "101 Congress Ave", None, None, "Austin", "TX",
-         "78701", "United States", -97.7431, 30.2672, "512-555-0004", None, 
-         "Texas", "101 Congress Ave", "micro", "united states", 1, 1, 1, datetime.now()),
-        ("tx-2", "Houston Regional", "regional", "202 Main St", None, None, "Houston", "TX",
-         "77002", "United States", -95.3698, 29.7604, None, None, 
-         "Texas", "202 Main St", "regional", "united states", 1, 0, 0, datetime.now()),
-        
+        ("tx-1", "Austin Micro", "micro", "101 Congress Ave", "101 Congress Ave", None, None,
+         "Austin", "Texas", "78701", "United States", -97.7431, 30.2672,
+         "512-555-0004", None, "micro", "united states",
+         "101 Congress Ave, Austin, TX 78701", 1, 1, 1, 1, now),
+        ("tx-2", "Houston Regional", "regional", "202 Main St", "202 Main St", None, None,
+         "Houston", "Texas", "77002", "United States", -95.3698, 29.7604,
+         None, None, "regional", "united states",
+         "202 Main St, Houston, TX 77002", 1, 1, 0, 0, now),
+
         # US - New York breweries
-        ("ny-1", "NYC Brewpub", "brewpub", "303 Broadway", None, None, "New York", "NY",
-         "10007", "United States", -74.0060, 40.7128, "212-555-0006", 
-         "http://nycbrewpub.com", "New York", "303 Broadway", "brewpub", 
-         "united states", 1, 1, 1, datetime.now()),
-        
+        ("ny-1", "NYC Brewpub", "brewpub", "303 Broadway", "303 Broadway", None, None,
+         "New York", "New York", "10007", "United States", -74.0060, 40.7128,
+         "212-555-0006", "http://nycbrewpub.com", "brewpub", "united states",
+         "303 Broadway, New York, NY 10007", 1, 1, 1, 1, now),
+
         # Canada - Ontario breweries
-        ("on-1", "Toronto Micro", "micro", "404 King St", None, None, "Toronto", "ON",
-         "M5H 1A1", "Canada", -79.3832, 43.6532, "+1-416-555-0007", 
-         "http://torontomicro.ca", "Ontario", "404 King St", "micro", 
-         "canada", 1, 1, 1, datetime.now()),
-        ("on-2", "Ottawa Planning", "planning", "505 Wellington St", None, None, "Ottawa", "ON",
-         "K1A 0A9", "Canada", None, None, None, None, "Ontario", "505 Wellington St", 
-         "planning", "canada", 0, 0, 0, datetime.now()),
-        
+        ("on-1", "Toronto Micro", "micro", "404 King St", "404 King St", None, None,
+         "Toronto", "Ontario", "M5H 1A1", "Canada", -79.3832, 43.6532,
+         "+1-416-555-0007", "http://torontomicro.ca", "micro", "canada",
+         "404 King St, Toronto, ON M5H 1A1", 1, 1, 1, 1, now),
+        ("on-2", "Ottawa Planning", "planning", "505 Wellington St", "505 Wellington St", None, None,
+         "Ottawa", "Ontario", "K1A 0A9", "Canada", None, None,
+         None, None, "planning", "canada",
+         "505 Wellington St, Ottawa, ON K1A 0A9", None, 0, 0, 0, now),
+
         # UK brewery
-        ("uk-1", "London Brewpub", "brewpub", "606 Thames St", None, None, "London", "England",
-         "SW1A 1AA", "United Kingdom", -0.1278, 51.5074, "+44-20-555-0009", 
-         "http://londonbrewpub.co.uk", "England", "606 Thames St", "brewpub", 
-         "united kingdom", 1, 1, 1, datetime.now()),
-        
+        ("uk-1", "London Brewpub", "brewpub", "606 Thames St", "606 Thames St", None, None,
+         "London", "England", "SW1A 1AA", "United Kingdom", -0.1278, 51.5074,
+         "+44-20-555-0009", "http://londonbrewpub.co.uk", "brewpub", "united kingdom",
+         "606 Thames St, London, SW1A 1AA", 1, 1, 1, 1, now),
+
         # Incomplete data
-        ("incomplete-1", "Unknown Brewery", None, None, None, None, None, None,
-         None, None, None, None, None, None, None, None, None, 
-         None, 0, 0, 0, datetime.now()),
+        ("incomplete-1", "Unknown Brewery", None, None, None, None, None,
+         None, None, None, None, None, None,
+         None, None, None, None,
+         None, None, 0, 0, 0, now),
     ]
-    
+
     df = spark_for_data.createDataFrame(data, schema)
-    
+
     # Write as Delta table
     df.write.format("delta").mode("overwrite").save(temp_silver_path)
-    
+
     return temp_silver_path
 
 
@@ -327,14 +334,15 @@ class TestGoldLayerCreateAggregations:
     def test_create_aggregations_success(self, gold_layer, sample_silver_data):
         """Test successful creation of all aggregations."""
         metadata = gold_layer.create_aggregations()
-        
+
         assert metadata is not None
         assert metadata["status"] == "success"
-        assert metadata["total_aggregations"] == 6
+        assert metadata["total_aggregations"] == 7
         assert metadata["aggregation_time_seconds"] > 0
-        
+
         # Check that all aggregations were created
         expected_tables = [
+            "breweries",
             "breweries_by_type",
             "breweries_by_country",
             "breweries_by_state",
@@ -415,11 +423,12 @@ class TestGoldLayerListAggregations:
         """Test listing aggregations after creation."""
         # Create aggregations
         gold_layer.create_aggregations()
-        
+
         # List aggregations
         tables = gold_layer.list_aggregations()
-        
-        assert len(tables) == 6
+
+        assert len(tables) == 7
+        assert "breweries" in tables
         assert "breweries_by_type" in tables
         assert "breweries_by_country" in tables
         assert "brewery_summary_statistics" in tables
@@ -433,53 +442,72 @@ class TestGoldLayerIntegration:
         # Override settings
         monkeypatch.setattr(Settings, "SILVER_PATH", str(Path(temp_silver_path).parent))
         monkeypatch.setattr(Settings, "GOLD_PATH", temp_gold_path)
-        
+
         # Create fresh Spark session for this test
         spark = initialize_spark(app_name="test_integration")
-        
+
         try:
-            # Prepare Silver data
+            # Prepare Silver data with full schema
             schema = StructType([
                 StructField("id", StringType(), nullable=False),
                 StructField("name", StringType(), nullable=True),
                 StructField("brewery_type_normalized", StringType(), nullable=True),
-                StructField("country_normalized", StringType(), nullable=True),
-                StructField("state", StringType(), nullable=True),
+                StructField("street", StringType(), nullable=True),
+                StructField("address_1", StringType(), nullable=True),
+                StructField("address_2", StringType(), nullable=True),
+                StructField("address_3", StringType(), nullable=True),
                 StructField("city", StringType(), nullable=True),
+                StructField("state", StringType(), nullable=True),
+                StructField("postal_code", StringType(), nullable=True),
+                StructField("country_normalized", StringType(), nullable=True),
+                StructField("full_address", StringType(), nullable=True),
+                StructField("longitude", DoubleType(), nullable=True),
+                StructField("latitude", DoubleType(), nullable=True),
+                StructField("coordinates_valid", IntegerType(), nullable=True),
                 StructField("has_coordinates", IntegerType(), nullable=True),
+                StructField("phone", StringType(), nullable=True),
+                StructField("website_url", StringType(), nullable=True),
                 StructField("has_contact", IntegerType(), nullable=True),
                 StructField("is_complete", IntegerType(), nullable=True),
+                StructField("silver_processed_at", TimestampType(), nullable=True),
             ])
-            
+
+            now = datetime.now()
             data = [
-                ("1", "Brewery A", "micro", "united states", "California", "SF", 1, 1, 1),
-                ("2", "Brewery B", "micro", "united states", "California", "LA", 1, 1, 1),
-                ("3", "Brewery C", "brewpub", "canada", "Ontario", "Toronto", 1, 0, 0),
+                ("1", "Brewery A", "micro", "123 Main St", "123 Main St", None, None,
+                 "SF", "California", "94102", "united states", "123 Main St, SF, CA",
+                 -122.4194, 37.7749, 1, 1, "415-555-0001", "http://a.com", 1, 1, now),
+                ("2", "Brewery B", "micro", "456 Oak Ave", "456 Oak Ave", None, None,
+                 "LA", "California", "90001", "united states", "456 Oak Ave, LA, CA",
+                 -118.2437, 34.0522, 1, 1, "213-555-0002", "http://b.com", 1, 1, now),
+                ("3", "Brewery C", "brewpub", "789 King St", "789 King St", None, None,
+                 "Toronto", "Ontario", "M5H 1A1", "canada", "789 King St, Toronto, ON",
+                 -79.3832, 43.6532, 1, 1, None, None, 0, 0, now),
             ]
-            
+
             df = spark.createDataFrame(data, schema)
             df.write.format("delta").mode("overwrite").save(temp_silver_path)
-            
+
             # Run Gold layer
             with GoldLayer() as gold:
                 metadata = gold.create_aggregations()
-                
+
                 # Verify results
                 assert metadata["status"] == "success"
-                
+
                 # Check type aggregation
                 type_df = gold.read_aggregation("breweries_by_type")
                 assert type_df.count() == 2
-                
+
                 micro_row = type_df.filter(type_df.brewery_type_normalized == "micro").first()
                 assert micro_row['brewery_count'] == 2
-                
+
                 # Check country aggregation
                 country_df = gold.read_aggregation("breweries_by_country")
                 assert country_df.count() == 2
-                
+
                 us_row = country_df.filter(country_df.country_normalized == "united states").first()
                 assert us_row['brewery_count'] == 2
-                
+
         finally:
             spark.stop()
