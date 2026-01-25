@@ -38,13 +38,8 @@ USER airflow
 # Copy requirements file
 COPY requirements.txt /tmp/requirements.txt
 
-# Install only essential packages (PySpark, Delta, requests, pandas)
-RUN pip install --no-cache-dir \
-    pyspark==3.5.0 \
-    delta-spark==3.1.0 \
-    requests==2.31.0 \
-    pandas==2.1.4 \
-    pyarrow==14.0.2
+# Install all Python dependencies from requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Set Python path
 ENV PYTHONPATH="/opt/airflow/src:/opt/airflow:${PYTHONPATH:-}"

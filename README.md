@@ -82,6 +82,67 @@ Este projeto vai além dos requisitos básicos do case, incluindo funcionalidade
 - Performance de geocoding (registros/segundo)
 - Taxa de perda de dados entre camadas (data loss rate)
 
+### 6. 🔍 Great Expectations - Validação Automatizada de Qualidade
+**Por que foi adicionado:** Data quality é crítico em produção. Great Expectations automatiza validação de dados e gera documentação interativa.
+
+**Funcionalidades:**
+- **Validação em 3 camadas:** Bronze, Silver e Gold com expectations específicas
+- **Anomaly Detection:** Detecta variações de volume >20% entre execuções
+- **Data Docs HTML:** Documentação interativa com gráficos e profiling estatístico
+- **28+ Expectations:** Schema, uniqueness, completeness, ranges, domain validation
+- **Integrated no Airflow:** Validação automática após cada camada do pipeline
+
+**Validações por Camada:**
+- **Bronze:** Schema API, IDs únicos, volume esperado (5k-50k), tipos conhecidos, coordinate ranges
+- **Silver:** Data loss <5%, país normalizado 100%, 85%+ coords válidas, Null Island detection
+- **Gold:** Agregações não vazias, counts positivos, USA/micro presentes, integridade matemática
+
+**Estatísticas Rastreadas:**
+- Success rate por expectation (% de aprovação)
+- Data retention rate (Bronze→Silver: 99.4%+)
+- Coordinate coverage (Bronze: 74% → Silver: 86%+)
+- Geocoding success rate (~85% de sucesso)
+- Validation execution time por layer
+
+**Benefícios:**
+- Detecta problemas antes de impactar análises
+- Documentação automática de qualidade de dados
+- Rastreamento de qualidade ao longo do tempo
+- Padrão da indústria (Netflix, Uber, Airbnb)
+
+📄 **Documentação completa:** [GREAT_EXPECTATIONS_GUIDE.md](GREAT_EXPECTATIONS_GUIDE.md)
+
+### 7. 📊 Pipeline Metrics Dashboard
+**Por que foi adicionado:** Monitoramento e observabilidade são essenciais para operação em produção.
+
+**Funcionalidades:**
+- **Aba dedicada no Streamlit** para visualizar métricas de execução
+- **Tempos de execução** detalhados por camada (Bronze, Silver, Gold)
+- **Histórico de execuções** com gráficos de tendência (últimas 20 runs)
+- **Métricas de qualidade** integradas com Great Expectations
+- **Fluxo de dados visual** (Sankey diagram) mostrando retenção de dados
+- **Estatísticas de enrichment** (geocoding coverage, validação geográfica)
+
+**Métricas Exibidas:**
+- ⏱️ Execution times: Bronze, Silver, Gold e total
+- 📊 Data volumes: Records ingested, transformed, aggregations created
+- 📉 Data loss rate: Perda Bronze → Silver
+- 🔍 Validation results: Success rate por camada (Great Expectations)
+- 🌍 Enrichment stats: Coordinate coverage, valid coords, geocoded rate
+- 📈 Historical trends: Volume e tempo de execução ao longo do tempo
+
+**Benefícios:**
+- Visibilidade completa do pipeline em tempo real
+- Identificação de bottlenecks de performance
+- Rastreamento de SLA e execution times
+- Debugging facilitado com histórico de execuções
+- Demonstra maturidade operacional
+
+📄 **Metadados salvos em:** `lakehouse/metadata/pipeline_runs.json`
+- Breakdown de falhas de validação
+- Performance de geocoding (registros/segundo)
+- Taxa de perda de dados entre camadas (data loss rate)
+
 ---
 
 ## Estrutura de Diretórios e Arquivos

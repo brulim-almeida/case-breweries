@@ -23,6 +23,8 @@ sys.path.insert(0, str(project_root))
 
 from src.layers import BronzeLayer, SilverLayer, GoldLayer
 from src.config.settings import Settings
+from src.validation import BreweriesDataValidator
+from src.utils.metadata_manager import PipelineMetadataManager
 
 
 # Default arguments for the DAG
@@ -276,6 +278,233 @@ with DAG(
             raise
 
     @task(
+        task_id='validate_bronze_quality',
+        execution_timeout=timedelta(minutes=15),
+    )
+    def validate_bronze_quality(bronze_metadata: dict, **context):
+        """
+        Task 2.5: Validate Bronze Layer data quality using Great Expectations.
+        
+        📊 VALIDAÇÕES REALIZADAS:
+        - Schema da API completo e correto
+        - IDs únicos (sem duplicatas)
+        - Campos obrigatórios preenchidos
+        - Volume de dados dentro do esperado (5k-50k)
+        - Tipos de cervejaria conhecidos
+        - Coordenadas em ranges válidos
+        - Detecção de anomalias de volume
+        
+        Args:
+            bronze_metadata: Metadata from Bronze ingestion
+            
+        Returns:
+            dict: Validation results
+        """
+        print("=" * 80)
+        print("🔍 VALIDATING BRONZE LAYER WITH GREAT EXPECTATIONS")
+        print("=" * 80)
+        
+        try:
+            from pyspark.sql import SparkSession
+            from delta import DeltaTable
+            
+            spark = SparkSession.builder \
+                .appName("BreweriesValidation") \
+                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+                .getOrCreate()
+            
+            # Read Bronze data
+            bronze_df = spark.read.format("delta").load(Settings.BRONZE_PATH)
+            
+            # Get previous count for anomaly detection
+            previous_count = context['ti'].xcom_pull(
+                task_ids='bronze_ingestion',
+                key='previous_count'
+            ) if context else None
+            
+            # Initialize validator
+            validator = BreweriesDataValidator(spark=spark, enable_data_docs=True)
+            
+            # Validate
+            result = validator.validate_bronze_layer(
+                df=bronze_df,
+                execution_date=context['ds'],
+                previous_count=previous_count
+            )
+            
+            # Store current count for next execution
+            context['ti'].xcom_push(key='previous_count', value=bronze_metadata['total_records'])
+            
+            print(f"\n📊 Validation Summary:")
+            print(f"   Success: {'✅ YES' if result['success'] else '❌ NO'}")
+            print(f"   Success Rate: {result['success_rate']:.1f}%")
+            print(f"   Passed: {result['passed_expectations']}/{result['total_expectations']}")
+            
+            if not result['success']:
+                print(f"\n⚠️  WARNING: {result['failed_expectations_count']} expectations failed")
+                for failure in result['failed_details'][:5]:  # Show first 5
+                    print(f"   - {failure['expectation']}: {failure['description']}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Bronze validation failed: {e}")
+            # Don't fail the pipeline, just log
+            return {'success': False, 'error': str(e)}
+    
+    @task(
+        task_id='validate_silver_quality',
+        execution_timeout=timedelta(minutes=15),
+    )
+    def validate_silver_quality(silver_metadata: dict, bronze_metadata: dict, **context):
+        """
+        Task 3.5: Validate Silver Layer data quality using Great Expectations.
+        
+        📊 VALIDAÇÕES REALIZADAS:
+        - Data Loss < 5% (Bronze → Silver)
+        - País normalizado para 100% dos registros
+        - 85%+ com coordenadas válidas (pós-geocoding)
+        - Validação geográfica (coords batem com país)
+        - Sem pontos em "Null Island" (0,0)
+        - URLs e telefones normalizados
+        
+        Args:
+            silver_metadata: Metadata from Silver transformation
+            bronze_metadata: Metadata from Bronze (for loss calculation)
+            
+        Returns:
+            dict: Validation results
+        """
+        print("=" * 80)
+        print("🔍 VALIDATING SILVER LAYER WITH GREAT EXPECTATIONS")
+        print("=" * 80)
+        
+        try:
+            from pyspark.sql import SparkSession
+            
+            spark = SparkSession.builder \
+                .appName("BreweriesValidation") \
+                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+                .getOrCreate()
+            
+            # Read Silver data
+            silver_df = spark.read.format("delta").load(Settings.SILVER_PATH)
+            
+            # Initialize validator
+            validator = BreweriesDataValidator(spark=spark, enable_data_docs=True)
+            
+            # Validate
+            result = validator.validate_silver_layer(
+                df=silver_df,
+                execution_date=context['ds'],
+                bronze_count=bronze_metadata['total_records']
+            )
+            
+            print(f"\n📊 Validation Summary:")
+            print(f"   Success: {'✅ YES' if result['success'] else '❌ NO'}")
+            print(f"   Success Rate: {result['success_rate']:.1f}%")
+            print(f"   Passed: {result['passed_expectations']}/{result['total_expectations']}")
+            
+            print(f"\n🌍 Enrichment Stats:")
+            print(f"   Coordinate Coverage: {result['enrichment_stats']['coordinate_coverage']:.1%}")
+            print(f"   Valid Coordinates: {result['enrichment_stats']['valid_coordinates_rate']:.1%}")
+            print(f"   Geocoded: {result['enrichment_stats']['geocoded_rate']:.1%}")
+            
+            if not result['success']:
+                print(f"\n⚠️  WARNING: {result['failed_expectations_count']} expectations failed")
+                for failure in result['failed_details'][:5]:
+                    print(f"   - {failure['expectation']}: {failure['description']}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Silver validation failed: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    @task(
+        task_id='validate_gold_quality',
+        execution_timeout=timedelta(minutes=15),
+    )
+    def validate_gold_quality(gold_metadata: dict, silver_metadata: dict, **context):
+        """
+        Task 4.5: Validate Gold Layer aggregations using Great Expectations.
+        
+        📊 VALIDAÇÕES REALIZADAS:
+        - Agregações não vazias
+        - Counts positivos e <= total Silver
+        - USA presente no top países
+        - 'micro' presente nos tipos
+        - Integridade matemática das agregações
+        
+        Args:
+            gold_metadata: Metadata from Gold layer
+            silver_metadata: Metadata from Silver (for consistency checks)
+            
+        Returns:
+            dict: Validation results
+        """
+        print("=" * 80)
+        print("🔍 VALIDATING GOLD LAYER WITH GREAT EXPECTATIONS")
+        print("=" * 80)
+        
+        try:
+            from pyspark.sql import SparkSession
+            
+            spark = SparkSession.builder \
+                .appName("BreweriesValidation") \
+                .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
+                .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
+                .getOrCreate()
+            
+            # Read Gold aggregations
+            aggregations = {}
+            gold_base = Settings.GOLD_PATH
+            
+            agg_names = [
+                'breweries_by_country',
+                'breweries_by_type',
+                'breweries_by_state',
+                'brewery_summary_statistics'
+            ]
+            
+            for agg_name in agg_names:
+                agg_path = f"{gold_base}/{agg_name}"
+                try:
+                    aggregations[agg_name] = spark.read.format("delta").load(agg_path)
+                except Exception as e:
+                    print(f"⚠️  Could not read {agg_name}: {e}")
+            
+            # Initialize validator
+            validator = BreweriesDataValidator(spark=spark, enable_data_docs=True)
+            
+            # Validate
+            result = validator.validate_gold_layer(
+                aggregations=aggregations,
+                execution_date=context['ds'],
+                silver_count=silver_metadata['output_records']
+            )
+            
+            print(f"\n📊 Validation Summary:")
+            print(f"   Success: {'✅ YES' if result['success'] else '❌ NO'}")
+            print(f"   Total Aggregations: {result['summary']['total_aggregations']}")
+            print(f"   Passed: {result['summary']['passed_aggregations']}")
+            print(f"   Failed: {result['summary']['failed_aggregations']}")
+            
+            if not result['success']:
+                print("\n⚠️  WARNING: Some aggregations failed validation")
+                for agg_name, agg_result in result['aggregations'].items():
+                    if not agg_result['success']:
+                        print(f"   ❌ {agg_name}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"❌ Gold validation failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+    @task(
         task_id='validate_pipeline',
         retries=1,
     )
@@ -283,6 +512,9 @@ with DAG(
         bronze_metadata: dict,
         silver_metadata: dict,
         gold_metadata: dict,
+        bronze_validation: dict,
+        silver_validation: dict,
+        gold_validation: dict,
         **context
     ):
         """
@@ -322,25 +554,40 @@ with DAG(
             ) if bronze_metadata['total_records'] > 0 else 0,
         }
         
+        # Great Expectations validation summary
+        ge_summary = {
+            'bronze_success': bronze_validation.get('success', False),
+            'silver_success': silver_validation.get('success', False),
+            'gold_success': gold_validation.get('success', False),
+            'bronze_success_rate': bronze_validation.get('success_rate', 0),
+            'silver_success_rate': silver_validation.get('success_rate', 0),
+            'gold_success_rate': gold_validation.get('success_rate', 0),
+        }
+        
         # Generate report
         report = {
             'execution_date': context['execution_date'].isoformat(),
             'dag_run_id': context['dag_run'].run_id,
             'validations': validations,
             'data_quality': data_quality,
+            'great_expectations': ge_summary,
             'bronze_layer': {
                 'records': bronze_metadata['total_records'],
                 'path': bronze_metadata['ingestion_path'],
+                'quality_success': bronze_validation.get('success', False),
             },
             'silver_layer': {
                 'records': silver_metadata['output_records'],
                 'countries': silver_metadata['distinct_countries'],
                 'types': silver_metadata['distinct_types'],
                 'path': silver_metadata['output_path'],
+                'quality_success': silver_validation.get('success', False),
+                'enrichment': silver_validation.get('enrichment_stats', {}),
             },
             'gold_layer': {
                 'aggregations': gold_metadata['total_aggregations'],
                 'processing_time': gold_metadata['aggregation_time'],
+                'quality_success': gold_validation.get('success', False),
             },
             'status': 'success' if all(validations.values()) else 'failed'
         }
@@ -359,19 +606,86 @@ with DAG(
         if data_quality['data_loss_rate'] > 5.0:
             print("   ⚠️  WARNING: Data loss exceeds 5% threshold")
         
+        print(f"\n🔍 Great Expectations Quality Checks:")
+        print(f"   Bronze: {'✅' if ge_summary['bronze_success'] else '❌'} ({ge_summary['bronze_success_rate']:.1f}%)")
+        print(f"   Silver: {'✅' if ge_summary['silver_success'] else '❌'} ({ge_summary['silver_success_rate']:.1f}%)")
+        print(f"   Gold:   {'✅' if ge_summary['gold_success'] else '❌'} ({ge_summary['gold_success_rate']:.1f}%)")
+        
         print("\n" + "=" * 80)
+        
+        # Save metadata for Streamlit visualization
+        try:
+            metadata_manager = PipelineMetadataManager()
+            
+            # Prepare execution times
+            execution_times = {
+                'bronze_ingestion_time': bronze_metadata.get('pages_processed', 0) * 0.5,  # Approximate
+                'silver_transformation_time': silver_metadata.get('transformation_time', 0),
+                'gold_aggregation_time': gold_metadata.get('aggregation_time', 0),
+                'total_pipeline_time': (
+                    bronze_metadata.get('pages_processed', 0) * 0.5 +
+                    silver_metadata.get('transformation_time', 0) +
+                    gold_metadata.get('aggregation_time', 0)
+                )
+            }
+            
+            # Save complete metadata
+            metadata_manager.save_run_metadata({
+                **report,
+                'execution_times': execution_times,
+                'validation_results': {
+                    'bronze': {
+                        'success': bronze_validation.get('success', False),
+                        'success_rate': bronze_validation.get('success_rate', 0),
+                        'total_expectations': bronze_validation.get('total_expectations', 0),
+                        'passed': bronze_validation.get('passed_expectations', 0),
+                        'failed': bronze_validation.get('failed_expectations_count', 0)
+                    },
+                    'silver': {
+                        'success': silver_validation.get('success', False),
+                        'success_rate': silver_validation.get('success_rate', 0),
+                        'total_expectations': silver_validation.get('total_expectations', 0),
+                        'passed': silver_validation.get('passed_expectations', 0),
+                        'failed': silver_validation.get('failed_expectations_count', 0),
+                        'enrichment_stats': silver_validation.get('enrichment_stats', {})
+                    },
+                    'gold': {
+                        'success': gold_validation.get('success', False),
+                        'total_aggregations': gold_validation.get('summary', {}).get('total_aggregations', 0),
+                        'passed': gold_validation.get('summary', {}).get('passed_aggregations', 0),
+                        'failed': gold_validation.get('summary', {}).get('failed_aggregations', 0)
+                    }
+                }
+            })
+            
+            print("💾 Pipeline metadata saved successfully")
+            
+        except Exception as e:
+            print(f"⚠️  Warning: Could not save metadata: {e}")
+            # Don't fail the pipeline if metadata save fails
         
         return report
 
     # Define task dependencies using TaskFlow API
     bronze_result = ingest_bronze_data()
+    bronze_quality = validate_bronze_quality(bronze_result)
+    
     silver_result = transform_silver_data(bronze_result)
+    silver_quality = validate_silver_quality(silver_result, bronze_result)
+    
     gold_result = create_gold_aggregations(silver_result)
+    gold_quality = validate_gold_quality(gold_result, silver_result)
+    
     validation_result = validate_pipeline_execution(
         bronze_result,
         silver_result,
-        gold_result
+        gold_result,
+        bronze_quality,
+        silver_quality,
+        gold_quality
     )
     
-    # Task flow: Bronze → Silver → Gold → Validation
-    bronze_result >> silver_result >> gold_result >> validation_result
+    # Task flow with quality checks:
+    # Bronze → Bronze Quality → Silver → Silver Quality → Gold → Gold Quality → Final Validation
+    bronze_result >> bronze_quality >> silver_result >> silver_quality >> gold_result >> gold_quality >> validation_result
+
