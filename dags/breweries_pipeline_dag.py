@@ -318,15 +318,47 @@ with DAG(
         print("=" * 80)
         
         try:
+            # Check if bronze ingestion was successful
+            if bronze_metadata.get('status') == 'failed':
+                error_msg = bronze_metadata.get('error', 'Unknown error')
+                print(f"⚠️  Skipping validation - Bronze ingestion failed: {error_msg}")
+                return {
+                    'success': False,
+                    'error': f'Bronze ingestion failed: {error_msg}',
+                    'skipped': True
+                }
+
+            if bronze_metadata.get('status') == 'warning' or bronze_metadata.get('total_records', 0) == 0:
+                print(f"⚠️  Skipping validation - No data to validate")
+                return {
+                    'success': False,
+                    'error': 'No data ingested',
+                    'skipped': True
+                }
+
             # Use the project's Spark session with Delta Lake support
             spark = initialize_spark(app_name="BreweriesValidation-Bronze")
 
             # Read Bronze data from the CURRENT ingestion only (not all historical files)
             # This prevents duplicate records when validating
-            current_file_path = bronze_metadata.get('file_path')
+            # Note: bronze_metadata uses 'ingestion_path' key (renamed from 'file_path' in bronze task)
+            current_file_path = bronze_metadata.get('ingestion_path')
             if not current_file_path:
-                raise ValueError("Bronze metadata does not contain 'file_path'")
+                raise ValueError(
+                    "Bronze metadata does not contain 'ingestion_path'. "
+                    "This usually means the bronze ingestion did not complete successfully. "
+                    f"Bronze metadata keys: {list(bronze_metadata.keys())}"
+                )
 
+            # Check if file exists
+            from pathlib import Path
+            if not Path(current_file_path).exists():
+                raise FileNotFoundError(
+                    f"Bronze data file not found: {current_file_path}. "
+                    "The file may have been deleted or the ingestion failed."
+                )
+
+            print(f"📂 Reading bronze data from: {current_file_path}")
             bronze_df = spark.read.option("multiLine", "true").json(current_file_path)
             
             # Get previous count for anomaly detection
