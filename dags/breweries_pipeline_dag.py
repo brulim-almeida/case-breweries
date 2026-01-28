@@ -320,10 +320,14 @@ with DAG(
         try:
             # Use the project's Spark session with Delta Lake support
             spark = initialize_spark(app_name="BreweriesValidation-Bronze")
-            
-            # Read Bronze data (JSON format) - Bronze stores in JSON, not Delta
-            bronze_path = f"{Settings.BRONZE_PATH}/breweries/year=*/month=*/day=*/*.json"
-            bronze_df = spark.read.option("multiLine", "true").json(bronze_path)
+
+            # Read Bronze data from the CURRENT ingestion only (not all historical files)
+            # This prevents duplicate records when validating
+            current_file_path = bronze_metadata.get('file_path')
+            if not current_file_path:
+                raise ValueError("Bronze metadata does not contain 'file_path'")
+
+            bronze_df = spark.read.option("multiLine", "true").json(current_file_path)
             
             # Get previous count for anomaly detection
             previous_count = context['ti'].xcom_pull(
